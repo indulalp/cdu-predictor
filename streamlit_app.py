@@ -637,7 +637,61 @@ elif page == "2. Yield Prediction":
                     "Parameter": state_targets,
                     "Predicted Value": [f"{v:.2f} {'°C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
                 }))
+            # ==============================================================
+            # GRAPHICAL VISUALIZATIONS: FEED & PRODUCT RECOVERY
+            # ==============================================================
+            st.divider()
+            st.subheader("📊 Feed & Recovery Analytics")
 
+            label_map = {
+                'flow_offgas': 'Off-Gas & LPG',
+                'flow_naphtha': 'Naphtha',
+                'flow_kero': 'Kerosene',
+                'flow_lago': 'LAGO',
+                'flow_residue': 'Atm. Residue'
+            }
+            display_labels = [label_map.get(col, col) for col in flow_targets]
+
+            plot_df = pd.DataFrame({
+                "Product Cut": display_labels,
+                "Mass Flow (t/h)": pred_flows,
+                "Yield Share (%)": norm_yields * 100.0
+            })
+
+            g_col1, g_col2 = st.columns(2)
+
+            with g_col1:
+                st.markdown("**Mass Recovery by Product Cut (t/h)**")
+                chart_data = plot_df.set_index("Product Cut")[["Mass Flow (t/h)"]]
+                st.bar_chart(chart_data, color="#0066cc")
+
+            with g_col2:
+                st.markdown("**Yield Fraction Breakdown (% Recovery)**")
+                yield_data = plot_df.set_index("Product Cut")[["Yield Share (%)"]]
+                st.bar_chart(yield_data, color="#ff7f0e")
+
+            with st.expander("📈 Dynamic Furnace Sensitivity Curve (Yield % vs COT)", expanded=True):
+                base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
+                cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
+                
+                sweep_yields = []
+                for temp in cot_sweep:
+                    temp_input = input_data.copy()
+                    temp_input['cot_degC'] = temp
+                    temp_df = pd.DataFrame([temp_input])
+                    y_pred = active_pipeline["yield_model"].predict(temp_df)[0]
+                    sweep_yields.append(y_pred * 100.0)
+
+                sweep_matrix = np.array(sweep_yields)
+                sensitivity_df = pd.DataFrame(
+                    sweep_matrix, 
+                    columns=display_labels, 
+                    index=np.round(cot_sweep, 1)
+                )
+                sensitivity_df.index.name = "Furnace COT (°C)"
+                
+                st.line_chart(sensitivity_df)
+                st.caption("Shows physical yield shifts across a ±15°C COT range holding feed assay and pressure steady.")
 # ==============================================================================
 # PAGE 3: PROTECTED WORKSPACE (MEMBER EXCLUSIVE)
 # ==============================================================================
