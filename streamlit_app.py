@@ -14,6 +14,7 @@ from sklearn.linear_model import Ridge
 from lightgbm import LGBMRegressor
 from sklearn.multioutput import MultiOutputRegressor
 from sklearn.metrics import mean_absolute_error, r2_score
+from github import Github, GithubException
 
 # --- App Config ---
 st.set_page_config(page_title="CDU Hybrid Digital Twin Platform", layout="wide")
@@ -24,7 +25,51 @@ DB_PATH = "audit_telemetry.db"
 GUEST_MODEL_FILE = "models/guest_model.pkl"
 
 # ==============================================================================
-# DATABASE & ACCESS CONTROL LAYER (ADMIN & CLIENT PROVISIONING)
+# STEP 4: GITHUB AUTO-COMMIT SYNCHRONIZATION ENGINE
+# ==============================================================================
+def sync_file_to_github(local_file_path, repo_file_path, commit_message="Auto-sync from Streamlit App"):
+    """Pushes or updates a file directly in your GitHub repository via API."""
+    if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
+        return False  # Gracefully fall back if secrets are not set yet
+
+    token = st.secrets["GITHUB_TOKEN"]
+    repo_name = st.secrets["GITHUB_REPO"]
+    branch = st.secrets.get("GITHUB_BRANCH", "main")
+
+    try:
+        g = Github(token)
+        repo = g.get_repo(repo_name)
+
+        with open(local_file_path, "rb") as f:
+            content = f.read()
+
+        try:
+            existing_file = repo.get_contents(repo_file_path, ref=branch)
+            repo.update_file(
+                path=repo_file_path,
+                message=commit_message,
+                content=content,
+                sha=existing_file.sha,
+                branch=branch
+            )
+        except GithubException as e:
+            if e.status == 404:
+                repo.create_file(
+                    path=repo_file_path,
+                    message=commit_message,
+                    content=content,
+                    branch=branch
+                )
+            else:
+                raise e
+
+        return True
+    except Exception as err:
+        st.sidebar.warning(f"⚠️ GitHub Sync Alert: {err}")
+        return False
+
+# ==============================================================================
+# DATABASE & ACCESS CONTROL LAYER (WITH STEP 5 AUTO-SYNC HOOKS)
 # ==============================================================================
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False)
@@ -93,6 +138,7 @@ def verify_login(username, password):
     conn.close()
     return row["role"] if row else None
 
+# STEP 5 (Hook 1): Auto-sync database when a user is created
 def create_client_user(new_username, plain_password):
     clean_u = new_username.strip().lower()
     clean_p = plain_password.strip()
@@ -109,15 +155,22 @@ def create_client_user(new_username, plain_password):
         success = False
         msg = f"Username `{clean_u}` already exists."
     conn.close()
+
+    if success:
+        sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Created client user {clean_u}")
+
     return success, msg
 
+# STEP 5 (Hook 2): Auto-sync database on password reset
 def reset_client_password(target_username, new_plain_password):
     p_hash = hashlib.sha256(new_plain_password.strip().encode()).hexdigest()
     conn = get_db_connection()
     conn.execute("UPDATE users SET password_hash = ? WHERE username = ?", (p_hash, target_username))
     conn.commit()
     conn.close()
+    sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Reset password for {target_username}")
 
+# STEP 5 (Hook 3): Auto-sync database on user deletion
 def delete_client_user(target_username):
     conn = get_db_connection()
     conn.execute("DELETE FROM users WHERE username = ?", (target_username,))
@@ -125,6 +178,7 @@ def delete_client_user(target_username):
     conn.execute("DELETE FROM simulation_history WHERE username = ?", (target_username,))
     conn.commit()
     conn.close()
+    sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Deleted user {target_username}")
 
 def get_visitor_geo():
     try:
@@ -147,6 +201,7 @@ def log_login_event(username):
     ''', (username, datetime.now(), geo["ip"], geo["city"], geo["region"], geo["country"]))
     conn.commit()
     conn.close()
+    sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Login log for {username}")
 
 # ==============================================================================
 # PHYSICS-INFORMED CONTINUOUS ENGINE
@@ -398,6 +453,7 @@ if page == "1. Model Training & DCS Upload":
                     "last_known_inputs": clean_df[input_cols].iloc[-1].to_dict()
                 }
 
+                # STEP 5 (Hook 4): Auto-sync trained .pkl models directly to GitHub
                 if save_as_protected and st.session_state["authenticated"]:
                     timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
                     save_path = f"models/protected_{st.session_state['username']}_{timestamp_str}.pkl"
@@ -410,13 +466,18 @@ if page == "1. Model Training & DCS Upload":
                     ''', (st.session_state["username"], model_tag, save_path, len(valid_df), datetime.now()))
                     conn.commit()
                     conn.close()
-                    st.success(f"🔒 Model saved to your private vault as `{model_tag}`!")
+
+                    # Push both the new .pkl and updated database
+                    sync_file_to_github(save_path, save_path, f"Auto-sync: New protected model {model_tag}")
+                    sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Registered protected model {model_tag}")
+                    st.success(f"🔒 Model saved to your vault and pushed to GitHub as `{model_tag}`!")
                 else:
                     joblib.dump(pipeline, GUEST_MODEL_FILE)
+                    sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Updated guest model")
                     st.success("🌐 Model trained and saved into public guest sandbox.")
 
 # ==============================================================================
-# PAGE 2: REAL-TIME PREDICTION & CONTINUOUS SENSITIVITY
+# PAGE 2: REAL-TIME PREDICTION (SAFE SELECTION IMPLEMENTED)
 # ==============================================================================
 elif page == "2. Yield Prediction":
     st.header("🎯 Autonomous CDU Prediction & Dynamic Sensitivity")
@@ -430,7 +491,7 @@ elif page == "2. Yield Prediction":
         )
         conn.close()
 
-        source_choice = st.radio("Prediction Model Source:", ["Public Guest Sandbox Model", "My Private Vault Models"], horizontal=True)
+        source_choice = st.radio("Choose Model to Predict With:", ["Public Guest Sandbox Model", "My Private Vault Models"], horizontal=True)
         
         if source_choice == "My Private Vault Models":
             if user_models_df.empty:
@@ -500,6 +561,7 @@ elif page == "2. Yield Prediction":
                 elif "pa" in s.lower():
                     pred_states[k] += 0.80 * cot_delta
 
+            # STEP 5 (Hook 5): Auto-sync simulation runs to GitHub database
             if st.session_state["authenticated"]:
                 conn = get_db_connection()
                 conn.execute('''
@@ -508,6 +570,7 @@ elif page == "2. Yield Prediction":
                 ''', (st.session_state["username"], datetime.now(), json.dumps(input_data), json.dumps(dict(zip(flow_targets, pred_flows)))))
                 conn.commit()
                 conn.close()
+                sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Logged run for {st.session_state['username']}")
 
             st.divider()
             c_left, c_right = st.columns(2)
@@ -641,6 +704,7 @@ elif page == "🛡️ Admin Audit & Telemetry":
                             os.remove(m_row["model_path"])
                         conn.execute("DELETE FROM protected_models WHERE id = ?", (del_m_id,))
                         conn.commit()
+                        sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Admin removed model {del_m_id}")
                         st.success(f"Removed model `{m_row['model_tag']}`.")
                         st.rerun()
 
