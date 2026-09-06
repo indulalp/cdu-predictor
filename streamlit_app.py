@@ -491,26 +491,26 @@ elif page == "2. Yield Prediction":
         )
         conn.close()
 
-        source_choice = st.radio("Choose Model to Predict With:", ["Public Guest Sandbox Model", "My Private Vault Models"], horizontal=True)
-        
-        if source_choice == "My Private Vault Models":
-            if user_models_df.empty:
-                st.warning("⚠️ You don't have any models saved in your private vault yet. Train one on Page 1 first!")
-            else:
-                tag_to_path = dict(zip(user_models_df["model_tag"], user_models_df["model_path"]))
-                selected_tag = st.selectbox("Select Your Model", options=list(tag_to_path.keys()))
-                chosen_path = tag_to_path[selected_tag]
-                
-                if chosen_path and os.path.exists(chosen_path):
-                    active_pipeline = joblib.load(chosen_path)
-                else:
-                    st.error("❌ Model file not found on disk.")
+        if user_models_df.empty:
+            st.warning("⚠️ You do not have any models in your private vault yet. Please train and save one on Page 1 first.")
+            st.stop()
         else:
-            if os.path.exists(GUEST_MODEL_FILE):
-                active_pipeline = joblib.load(GUEST_MODEL_FILE)
+            tag_to_path = dict(zip(user_models_df["model_tag"], user_models_df["model_path"]))
+            selected_tag = st.selectbox("Select Your Private Model:", options=list(tag_to_path.keys()))
+            chosen_path = tag_to_path[selected_tag]
+            
+            if chosen_path and os.path.exists(chosen_path):
+                active_pipeline = joblib.load(chosen_path)
+            else:
+                st.error("❌ Selected model artifact is missing from disk.")
+                st.stop()
     else:
+        # Unauthenticated guests default to the sandbox model
         if os.path.exists(GUEST_MODEL_FILE):
             active_pipeline = joblib.load(GUEST_MODEL_FILE)
+        else:
+            st.warning("⚠️ No public guest model available. Please train one on Page 1 or log in.")
+            st.stop()
 
     if not active_pipeline:
         st.warning("⚠️ No trained model found. Please train a model on Page 1 first.")
