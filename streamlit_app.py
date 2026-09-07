@@ -541,7 +541,7 @@ elif page == "2. Yield Prediction":
         )
         conn.close()
 
-        source_choice = st.radio("Choose Model to Predict With:", ["My Private Vault Models","Public Guest Sandbox Model"], horizontal=True)
+        source_choice = st.radio("Choose Model to Predict With:", ["Public Guest Sandbox Model","My Private Vault Models"], horizontal=True)
         
         if source_choice == "My Private Vault Models":
             if user_models_df.empty:
