@@ -623,7 +623,7 @@ elif page == "2. Yield Prediction":
             st.divider()
             c_left, c_right = st.columns(2)
             with c_left:
-                st.subheader("📦 Product Recovery Yields")
+                st.subheader(" Product Recovery Yields")
                 st.table(pd.DataFrame({
                     "Cut Stream": flow_targets,
                     "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
@@ -632,7 +632,7 @@ elif page == "2. Yield Prediction":
                 st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h (Closure: 0.00% error)")
 
             with c_right:
-                st.subheader("🌡️ Predicted Column Profile")
+                st.subheader(" Predicted Column Profile")
                 st.table(pd.DataFrame({
                     "Parameter": state_targets,
                     "Predicted Value": [f"{v:.2f} {'°C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
