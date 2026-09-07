@@ -541,7 +541,7 @@ elif page == "2. Yield Prediction":
         )
         conn.close()
 
-        source_choice = st.radio("Choose Model to Predict With:", ["Public Guest Sandbox Model","My Private Vault Models"], horizontal=True)
+        source_choice = st.radio("Choose Model to Predict With:", ["Public Guest Sandbox Model", "My Private Vault Models"], horizontal=True)
         
         if source_choice == "My Private Vault Models":
             if user_models_df.empty:
@@ -561,7 +561,6 @@ elif page == "2. Yield Prediction":
     else:
         if os.path.exists(GUEST_MODEL_FILE):
             active_pipeline = joblib.load(GUEST_MODEL_FILE)
-
     if not active_pipeline:
         st.warning("⚠️ No trained model found. Please train a model on Page 1 first.")
     else:
