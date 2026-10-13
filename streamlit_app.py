@@ -773,7 +773,7 @@ elif page == "2. Yield Prediction":
                 {"RCO Rec @ 360°C (vol%)": rco_sweep_vals},
                 index=np.round(cot_sweep, 1)
             )
-            rco_curve_df.index.name = "Furnace COT (°C)"
+            rco_curve_df.index.name = "Furnace COT (deg C)"
             st.line_chart(rco_curve_df, color="#d62728")
             st.caption("Illustrates how increased thermal severity reduces distillate slippage in atmospheric bottoms.")
 
@@ -784,4 +784,4 @@ elif page == "2. Yield Prediction":
                     columns=display_labels, 
                     index=np.round(cot_sweep, 1)
                 )
-                sensitivity_df.index.name = "Furnace COT (°
+                sensitivity_df.index.name = "Furnace COT (deg C)"
