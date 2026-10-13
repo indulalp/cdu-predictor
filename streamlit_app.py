@@ -429,7 +429,8 @@ if st.session_state["authenticated"]:
 if st.session_state["role"] == "admin":
     nav_options.append("🛡️ Admin Audit & Telemetry")
 
-page = st.sidebar.radio("Navigation", nav_options)
+# Default landing page index is set to 1 ("2. Yield Prediction")
+page = st.sidebar.radio("Navigation", nav_options, index=1)
 
 # ==============================================================================
 # PAGE 1: MODEL TRAINING & INGESTION
@@ -480,13 +481,22 @@ if page == "1. Model Training & DCS Upload":
         df['crude_api'] = df[selected_dens].apply(density_to_api)
         st.success(f"Calculated `crude_api` from `{selected_dens}`")
 
+    # Auto-detect crude flow alias (handles 'flow rate', 'crude_flow', etc.)
+    detected_crude = None
+    for cand in ['crude_flow', 'flow rate', 'feed_flow', 'crude_rate']:
+        if cand in df.columns:
+            detected_crude = cand
+            break
+    if not detected_crude:
+        detected_crude = df.columns[0]
+
     # Dynamic column identification
     rco_target_candidates = [c for c in df.columns if 'rco' in str(c).lower() or '360' in str(c).lower()]
     default_rco_col = rco_target_candidates[0] if rco_target_candidates else None
 
     sulfur_col_name = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
     
-    default_inputs = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
+    default_inputs = [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
     if sulfur_col_name:
         default_inputs.insert(2, sulfur_col_name)
 
@@ -497,7 +507,7 @@ if page == "1. Model Training & DCS Upload":
     input_cols = c1.multiselect("Inputs (X)", list(df.columns), default=[c for c in default_inputs if c in df.columns])
     flow_cols = c2.multiselect("Product Flows (Y1)", list(df.columns), default=[c for c in default_flows if c in df.columns])
     state_cols = c3.multiselect("Internal States (Y2)", list(df.columns), default=[c for c in default_states if c in df.columns])
-    crude_col = c1.selectbox("Crude Inlet Flow Tag", list(df.columns), index=list(df.columns).index('crude_flow') if 'crude_flow' in df.columns else 0)
+    crude_col = c1.selectbox("Crude Inlet Flow Tag", list(df.columns), index=list(df.columns).index(detected_crude) if detected_crude in list(df.columns) else 0)
     
     rco_col = None
     if default_rco_col:
@@ -609,15 +619,18 @@ elif page == "2. Yield Prediction":
     active_pipeline = None
     if st.session_state["authenticated"]:
         conn = get_db_connection()
+        # Order by id DESC so the LAST ADDED model is first in the list
         user_models_df = pd.read_sql_query(
-            "SELECT id, model_tag, model_path FROM protected_models WHERE username = ?",
+            "SELECT id, model_tag, model_path FROM protected_models WHERE username = ? ORDER BY id DESC",
             conn, params=(st.session_state["username"],)
         )
         conn.close()
 
+        # In private space, default to index 1 ("My Private Vault Models")
         source_choice = st.radio(
             "Prediction Model Source:", 
             ["Public Guest Sandbox Model", "My Private Vault Models"], 
+            index=1,
             horizontal=True
         )
 
@@ -627,7 +640,8 @@ elif page == "2. Yield Prediction":
                 st.stop()
             else:
                 tag_to_path = dict(zip(user_models_df["model_tag"], user_models_df["model_path"]))
-                selected_tag = st.selectbox("Select Your Private Model:", options=list(tag_to_path.keys()))
+                # The first option is automatically the last-added model because of ORDER BY id DESC
+                selected_tag = st.selectbox("Select Your Private Model:", options=list(tag_to_path.keys()), index=0)
                 chosen_path = tag_to_path[selected_tag]
                 
                 if chosen_path and os.path.exists(chosen_path):
@@ -656,9 +670,10 @@ elif page == "2. Yield Prediction":
         state_targets = active_pipeline["state_targets"]
         last_in = active_pipeline.get("last_known_inputs", {})
         stats = active_pipeline["baseline_stats"]
+        crude_tag = active_pipeline.get("crude_col", "crude_flow")
 
-        st.subheader("1. Crude Assay Properties")
-        c_dens1, c_dens2 = st.columns(2)
+        st.subheader("1. Crude Assay Properties & Inlet Throughput")
+        c_dens1, c_dens2, c_dens3 = st.columns(3)
         last_api = float(last_in.get('crude_api', 34.0))
         default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 855.0
 
@@ -666,20 +681,27 @@ elif page == "2. Yield Prediction":
         calculated_api = density_to_api(input_density)
         c_dens2.metric("Calculated Crude API", f"{calculated_api:.2f} °API")
 
+        # Explicit Crude Inlet Flow Rate Input (Guarantees flow is always present)
+        default_crude_flow = float(last_in.get(crude_tag, 1847.0))
+        crude_in_val = c_dens3.number_input(f"Crude Inlet Flow Rate ({crude_tag}) [t/h]", value=default_crude_flow, format="%.2f")
+
         st.subheader("2. Operating Boundary Inputs (Initialized from Plant Runs)")
         input_data = {}
+        # Ensure crude throughput and API are explicitly registered
+        input_data[crude_tag] = crude_in_val
+        input_data['crude_api'] = calculated_api
+
+        # Display remaining operating tags without duplicating crude flow or API
+        boundary_features = [f for f in input_cols if f != crude_tag and f != 'crude_api']
         cols = st.columns(3)
-        for i, feat in enumerate(input_cols):
-            if feat == 'crude_api':
-                input_data[feat] = calculated_api
-            else:
-                fallback = last_in.get(feat, 350.0 if "cot" in feat.lower() else (1847.0 if "crude" in feat.lower() else (1.45 if "p_kgcm2" in feat.lower() else 13.5)))
-                input_data[feat] = cols[i % 3].number_input(feat, value=float(fallback), format="%.2f")
+        for i, feat in enumerate(boundary_features):
+            fallback = last_in.get(feat, 350.0 if "cot" in feat.lower() else (1.45 if "p_kgcm2" in feat.lower() else 13.5))
+            input_data[feat] = cols[i % 3].number_input(feat, value=float(fallback), format="%.2f")
 
         if st.button("🔮 Run Simulation & Predict", type="primary"):
             input_df = pd.DataFrame([input_data])
             norm_yields = active_pipeline["yield_model"].predict(input_df)[0]
-            crude_in = input_data[active_pipeline["crude_col"]]
+            crude_in = input_data.get(crude_tag, crude_in_val)
             pred_flows = norm_yields * crude_in
 
             scaled_state = active_pipeline["scaler_states"].transform(input_df)
