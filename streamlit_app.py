@@ -626,22 +626,24 @@ elif page == "2. Yield Prediction":
         )
         conn.close()
 
-        # In private space, default to index 1 ("My Private Vault Models")
-        source_choice = st.radio(
-            "Prediction Model Source:", 
-            ["Public Guest Sandbox Model", "My Private Vault Models"], 
-            index=1,
-            horizontal=True
-        )
+        # Ultra-compact single-row model selector
+        m_sel_col1, m_sel_col2 = st.columns([1.5, 2.5])
+        with m_sel_col1:
+            source_choice = st.radio(
+                "Prediction Model Source:", 
+                ["Public Guest Sandbox Model", "My Private Vault Models"], 
+                index=1,
+                horizontal=True
+            )
 
         if source_choice == "My Private Vault Models":
             if user_models_df.empty:
-                st.warning("⚠️ You do not have any models in your private vault yet. You can predict with the 'Public Guest Sandbox Model' or train one on Page 1.")
+                st.warning("⚠️ No private vault models found. Please train one on Page 1 first.")
                 st.stop()
             else:
                 tag_to_path = dict(zip(user_models_df["model_tag"], user_models_df["model_path"]))
-                # The first option is automatically the last-added model because of ORDER BY id DESC
-                selected_tag = st.selectbox("Select Your Private Model:", options=list(tag_to_path.keys()), index=0)
+                with m_sel_col2:
+                    selected_tag = st.selectbox("Select Your Private Model:", options=list(tag_to_path.keys()), index=0)
                 chosen_path = tag_to_path[selected_tag]
                 
                 if chosen_path and os.path.exists(chosen_path):
@@ -672,33 +674,43 @@ elif page == "2. Yield Prediction":
         stats = active_pipeline["baseline_stats"]
         crude_tag = active_pipeline.get("crude_col", "crude_flow")
 
-        st.subheader("1. Crude Assay Properties & Inlet Throughput")
-        c_dens1, c_dens2, c_dens3 = st.columns(3)
+        # Compact Section 1: Crude Assay Properties & Inlet Throughput
+        st.markdown("#### 1. Crude Assay Properties & Inlet Throughput")
+        c_dens1, c_dens2, c_dens3 = st.columns([1.5, 1.2, 2.0])
         last_api = float(last_in.get('crude_api', 34.0))
-        default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 855.0
+        default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 852.87
 
-        input_density = c_dens1.number_input("Crude Density (kg/m³ or SG @ 15°C)", value=default_density, format="%.2f")
+        input_density = c_dens1.number_input("Crude Density (kg/m³ @ 15°C)", value=default_density, format="%.2f")
         calculated_api = density_to_api(input_density)
-        c_dens2.metric("Calculated Crude API", f"{calculated_api:.2f} °API")
+        c_dens2.metric("Calculated API", f"{calculated_api:.2f} °API")
 
         # Explicit Crude Inlet Flow Rate Input (Guarantees flow is always present)
-        default_crude_flow = float(last_in.get(crude_tag, 1847.0))
+        default_crude_flow = float(last_in.get(crude_tag, 1847.17))
         crude_in_val = c_dens3.number_input(f"Crude Inlet Flow Rate ({crude_tag}) [t/h]", value=default_crude_flow, format="%.2f")
 
-        st.subheader("2. Operating Boundary Inputs (Initialized from Plant Runs)")
-        input_data = {}
-        # Ensure crude throughput and API are explicitly registered
-        input_data[crude_tag] = crude_in_val
-        input_data['crude_api'] = calculated_api
+        # Compact Section 2: Operating Boundary Inputs & Inline Action Button
+        st.markdown("#### 2. Operating Boundary Inputs (Initialized from Plant Runs)")
+        input_data = {
+            crude_tag: crude_in_val,
+            'crude_api': calculated_api
+        }
 
-        # Display remaining operating tags without duplicating crude flow or API
         boundary_features = [f for f in input_cols if f != crude_tag and f != 'crude_api']
-        cols = st.columns(3)
-        for i, feat in enumerate(boundary_features):
-            fallback = last_in.get(feat, 350.0 if "cot" in feat.lower() else (1.45 if "p_kgcm2" in feat.lower() else 13.5))
-            input_data[feat] = cols[i % 3].number_input(feat, value=float(fallback), format="%.2f")
+        num_features = len(boundary_features)
+        
+        # Allocate columns: 1 for each operating parameter + 1 for the inline Run button
+        col_ratios = [1.0] * num_features + [1.2]
+        op_cols = st.columns(col_ratios)
 
-        if st.button("🔮 Run Simulation & Predict", type="primary"):
+        for i, feat in enumerate(boundary_features):
+            fallback = last_in.get(feat, 350.12 if "cot" in feat.lower() else (1.43 if "p_kgcm2" in feat.lower() else (13.20 if "steam" in feat.lower() else 243.27)))
+            input_data[feat] = op_cols[i].number_input(feat, value=float(fallback), format="%.2f")
+
+        with op_cols[-1]:
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)  # Vertical alignment shim
+            run_sim = st.button("🔮 Run Simulation & Predict", type="primary", use_container_width=True)
+
+        if run_sim:
             input_df = pd.DataFrame([input_data])
             norm_yields = active_pipeline["yield_model"].predict(input_df)[0]
             crude_in = input_data.get(crude_tag, crude_in_val)
@@ -747,81 +759,60 @@ elif page == "2. Yield Prediction":
                 conn.close()
                 sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Logged run for {st.session_state['username']}")
 
-            st.divider()
-            c_left, c_right = st.columns(2)
-            with c_left:
-                st.subheader("📦 Product Recovery Yields")
-                st.table(pd.DataFrame({
-                    "Cut Stream": flow_targets,
-                    "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
-                    "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
-                }))
-                st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
-
-            with c_right:
-                st.subheader("🌡️ Predicted Column Profile")
-                st.table(pd.DataFrame({
-                    "Parameter": state_targets,
-                    "Predicted Value": [f"{v:.2f} {'deg C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
-                }))
-
             # ==============================================================
-            # AUTONOMOUS RCO QUALITY @ 360 C PREDICTION
+            # PRIORITY 1: AUTONOMOUS RCO RECOVERY @ 360°C & STRIPPING DIAGNOSTICS
             # ==============================================================
             st.divider()
-            st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360 deg C")
-            r_col1, r_col2, r_col3 = st.columns(3)
+            st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360°C & Stripping Diagnostics")
             
-            r_col1.metric(
-                label="Predicted RCO Recovery @ 360 deg C", 
-                value=f"{pred_rco_rec_360:.2f} vol%"
-            )
+            r_col1, r_col2, r_col3 = st.columns([1.2, 1.8, 1.2])
+            r_col1.metric("Predicted RCO Rec @ 360°C", f"{pred_rco_rec_360:.2f} vol%")
 
+            # Operational Classification & Optimization Strategy Engine
+            cot_current = float(input_data.get('cot_degC', 350.12))
+            steam_current = float(input_data.get('stripping_steam_flow', 13.20))
+            fzp_current = float(input_data.get('flash_zone_p_kgcm2', 1.43))
+
+            suggestions = []
             if pred_rco_rec_360 <= 5.00:
                 sep_status = "🟢 Deep Cut / Minimal Slippage"
+                status_color = "success"
+                suggestions.append("• **Stripping Severity is Optimal:** Residue contains minimal gas oil tail.")
+                suggestions.append(f"• **Energy Conservation:** Stripping steam is currently `{steam_current:.2f} t/h`. You may safely trim steam by `0.5 - 1.0 t/h` to reduce boiler load without exceeding the 6.5 vol% slippage limit.")
             elif pred_rco_rec_360 <= 7.50:
                 sep_status = "🟡 Typical Operational Stripping"
+                status_color = "info"
+                suggested_steam = min(steam_current + 1.2, 18.0)
+                suggested_cot = cot_current + 2.5
+                suggestions.append(f"• **Moderate Gas Oil Loss:** Slippage is within standard limits but valuable distillate is downgrading to residue.")
+                suggestions.append(f"• **Recommended Action 1 (Steam):** Increase Stripping Steam from `{steam_current:.2f} t/h` ➔ **`{suggested_steam:.2f} t/h`** (~{suggested_steam/crude_in*1000:.1f} kg/t crude) to strip ~0.3 vol% more gas oil.")
+                suggestions.append(f"• **Recommended Action 2 (Furnace):** Advance Coil Outlet Temp (COT) from `{cot_current:.2f}°C` ➔ **`{suggested_cot:.2f}°C`** if within furnace tube metallurgy limits.")
             else:
                 sep_status = "🔴 High Distillate Loss in Residue"
+                status_color = "warning"
+                target_steam = max(steam_current + 2.5, 16.5)
+                target_cot = min(cot_current + 4.0, 360.0)
+                suggestions.append("• **Critical Stripping Inefficiency:** Heavy gas oils are sliding directly into the low-value residue pool.")
+                suggestions.append(f"• **Action Required 1:** Boost Stripping Steam from `{steam_current:.2f} t/h` ➔ **`{target_steam:.2f} t/h`** immediately.")
+                suggestions.append(f"• **Action Required 2:** Raise Furnace COT from `{cot_current:.2f}°C` ➔ **`{target_cot:.2f}°C`** to shift flash equilibrium.")
+                if fzp_current > 1.50:
+                    suggestions.append(f"• **Action Required 3:** Column Flash Zone Pressure is elevated (`{fzp_current:.2f} kg/cm²`). Reduce top reflux/condenser pressure drop toward `1.42 kg/cm²` to facilitate vaporization.")
 
-            r_col2.metric(label="Residue Stripping Quality", value=sep_status)
-            r_col3.metric(label="Stripping Steam Ratio", value=f"{(input_data.get('stripping_steam_flow', 14.0) / crude_in * 1000):.2f} kg/t crude")
+            r_col2.metric("Stripping / Separation Quality", sep_status)
+            steam_ratio = (steam_current / crude_in) * 1000.0
+            r_col3.metric("Stripping Steam Ratio", f"{steam_ratio:.2f} kg/t crude")
 
-            # ==============================================================
-            # DEDICATED GRAPHS: FEED, RECOVERY & RCO SENSITIVITY
-            # ==============================================================
-            st.divider()
-            st.subheader("📊 Product Yields & RCO Recovery Analytics")
+            # Parameter Optimization Advisory Box
+            with st.container():
+                if status_color == "success":
+                    st.success("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
+                elif status_color == "info":
+                    st.info("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
+                else:
+                    st.warning("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
 
-            label_map = {
-                'flow_offgas': 'Off-Gas & LPG',
-                'flow_naphtha': 'Naphtha',
-                'flow_kero': 'Kerosene',
-                'flow_lago': 'LAGO',
-                'flow_residue': 'Atm. Residue'
-            }
-            display_labels = [label_map.get(col, col) for col in flow_targets]
-
-            plot_df = pd.DataFrame({
-                "Product Cut": display_labels,
-                "Mass Flow (t/h)": pred_flows,
-                "Yield Share (%)": norm_yields * 100.0
-            })
-
-            g_col1, g_col2 = st.columns(2)
-
-            with g_col1:
-                st.markdown("**Mass Recovery by Product Cut (t/h)**")
-                chart_data = plot_df.set_index("Product Cut")[["Mass Flow (t/h)"]]
-                st.bar_chart(chart_data, color="#0066cc")
-
-            with g_col2:
-                st.markdown("**Yield Fraction Breakdown (% Recovery)**")
-                yield_data = plot_df.set_index("Product Cut")[["Yield Share (%)"]]
-                st.bar_chart(yield_data, color="#ff7f0e")
-
-            # RCO Sensitivity Sweep Curve
-            st.markdown("### 📈 RCO Recovery @ 360 deg C vs Furnace COT")
+            # PRIORITY 2: Standalone RCO Recovery @ 360°C Sensitivity Curve
+            st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT (Thermodynamic Sensitivity)")
             base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
             cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
 
@@ -846,17 +837,71 @@ elif page == "2. Yield Prediction":
             )
             rco_curve_df.index.name = "Furnace COT (deg C)"
             st.line_chart(rco_curve_df, color="#d62728")
-            st.caption("Illustrates how increased thermal severity reduces distillate slippage in atmospheric bottoms.")
+            st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
 
-            # Dynamic Overall Distillate Yield Curves
-            with st.expander("📈 Dynamic Distillate Cut Yield Curves (Yield % vs COT)", expanded=False):
-                sensitivity_df = pd.DataFrame(
-                    np.array(yield_sweep_vals), 
-                    columns=display_labels, 
-                    index=np.round(cot_sweep, 1)
-                )
-                sensitivity_df.index.name = "Furnace COT (deg C)"
-                st.line_chart(sensitivity_df)
+            # ==============================================================
+            # PRODUCT YIELDS & COLUMN PROFILES
+            # ==============================================================
+            st.divider()
+            c_left, c_right = st.columns(2)
+            with c_left:
+                st.subheader("📦 Product Recovery Yields")
+                st.table(pd.DataFrame({
+                    "Cut Stream": flow_targets,
+                    "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
+                    "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
+                }))
+                st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
+
+            with c_right:
+                st.subheader("🌡️ Predicted Column Profile")
+                st.table(pd.DataFrame({
+                    "Parameter": state_targets,
+                    "Predicted Value": [f"{v:.2f} {'deg C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
+                }))
+
+            # ==============================================================
+            # MASS & FRACTION BAR CHARTS + ALWAYS-VISIBLE YIELD CURVES
+            # ==============================================================
+            st.divider()
+            st.subheader("📊 Product Yield Analytics & Dynamic Curves")
+
+            label_map = {
+                'flow_offgas': 'Off-Gas & LPG',
+                'flow_naphtha': 'Naphtha',
+                'flow_kero': 'Kerosene',
+                'flow_lago': 'LAGO',
+                'flow_residue': 'Atm. Residue'
+            }
+            display_labels = [label_map.get(col, col) for col in flow_targets]
+
+            plot_df = pd.DataFrame({
+                "Product Cut": display_labels,
+                "Mass Flow (t/h)": pred_flows,
+                "Yield Share (%)": norm_yields * 100.0
+            })
+
+            g_col1, g_col2 = st.columns(2)
+            with g_col1:
+                st.markdown("**Mass Recovery by Product Cut (t/h)**")
+                chart_data = plot_df.set_index("Product Cut")[["Mass Flow (t/h)"]]
+                st.bar_chart(chart_data, color="#0066cc")
+
+            with g_col2:
+                st.markdown("**Yield Fraction Breakdown (% Recovery)**")
+                yield_data = plot_df.set_index("Product Cut")[["Yield Share (%)"]]
+                st.bar_chart(yield_data, color="#ff7f0e")
+
+            # Always visible: Dynamic Overall Distillate Yield Curves
+            st.markdown("#### 📈 Dynamic Distillate Cut Yield Curves (Yield % vs COT)")
+            sensitivity_df = pd.DataFrame(
+                np.array(yield_sweep_vals), 
+                columns=display_labels, 
+                index=np.round(cot_sweep, 1)
+            )
+            sensitivity_df.index.name = "Furnace COT (deg C)"
+            st.line_chart(sensitivity_df)
+            st.caption("Displays continuous mass yield redistribution across light, intermediate, and bottom cuts across a ±15°C COT range.")
 
 # ==============================================================================
 # PAGE 3: PROTECTED WORKSPACE (MEMBER EXCLUSIVE)
