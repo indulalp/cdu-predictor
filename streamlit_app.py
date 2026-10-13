@@ -42,7 +42,7 @@ PHYSICS_SLOPES = {
 }
 
 # ==============================================================================
-# EMBEDDED PLANT RUNS WITH MEASURED RCO RECOVERY @ 360°C
+# EMBEDDED PLANT RUNS WITH MEASURED RCO RECOVERY @ 360 C
 # ==============================================================================
 EXCEL_RECORDS = [
     {"rco_rec_360": 6.3, "crude_flow": 1847.17, "crude_density": 852.9, "crude_api": 34.3938, "cot_degC": 350.120, "flash_zone_p_kgcm2": 1.43, "stripping_steam_flow": 13.20, "top_pa": 380.11, "kero_pa_flow_tph": 394.33, "lago_pa_flow_tph": 151.520, "top_temp_degC": 120.26, "lago_d86_95_degC": 243.27, "flow_offgas": 6.85000, "flow_naphtha": 124.81, "flow_kero": 78.36, "flow_lago": 442.39, "flow_residue": 978.09},
@@ -444,9 +444,17 @@ if page == "1. Model Training & DCS Upload":
 
     if uploaded_file is not None:
         raw_df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
+        
+        # Promote header row if unnamed columns are detected
         if any("unnamed" in str(col).lower() for col in raw_df.columns):
             raw_df.columns = raw_df.iloc[0].astype(str)
             raw_df = raw_df[1:].reset_index(drop=True)
+            
+        # Clean column names, remove duplicate headers, and reset index
+        raw_df.columns = [str(c).strip() for c in raw_df.columns]
+        raw_df = raw_df.loc[:, ~raw_df.columns.duplicated()].copy()
+        raw_df = raw_df.reset_index(drop=True)
+
         st.session_state['active_df'] = raw_df
         st.session_state['active_src_name'] = f"Uploaded File: `{uploaded_file.name}`"
     elif use_synthetic:
@@ -506,21 +514,31 @@ if page == "1. Model Training & DCS Upload":
 
     if st.button("🚀 Train Digital Twin", type="primary"):
         with st.spinner("Training hybrid yield model & RCO recovery engine..."):
-            all_needed = list(set(input_cols + flow_cols + state_cols + [crude_col]))
-            if rco_col:
-                all_needed.append(rco_col)
-            clean_df = df[all_needed].apply(pd.to_numeric, errors='coerce').dropna()
+            needed_cols = []
+            for c in (input_cols + flow_cols + state_cols + [crude_col] + ([rco_col] if rco_col else [])):
+                if c not in needed_cols and c in df.columns:
+                    needed_cols.append(c)
+
+            clean_df = df.loc[:, ~df.columns.duplicated()].copy().reset_index(drop=True)
+            clean_df = clean_df[needed_cols].apply(pd.to_numeric, errors='coerce').dropna().reset_index(drop=True)
+
+            crude_series = clean_df[crude_col]
+            if isinstance(crude_series, pd.DataFrame):
+                crude_series = crude_series.iloc[:, 0]
 
             total_out = clean_df[flow_cols].sum(axis=1)
-            valid_df = clean_df[np.abs(total_out - clean_df[crude_col]) / clean_df[crude_col] < 0.25].copy()
+
+            imbalance = np.abs(total_out - crude_series) / crude_series.replace(0, np.nan)
+            valid_mask = imbalance.fillna(1.0) < 0.25
+            valid_df = clean_df[valid_mask].copy().reset_index(drop=True)
 
             if valid_df.empty:
                 st.error("❌ Mass balance error: Cleaned data does not close within tolerance.")
                 st.stop()
 
-            yield_targets = valid_df[flow_cols].div(valid_df[crude_col], axis=0)
-            X_tr, X_te, yf_tr, yf_te, ys_tr, ys_te, c_tr, c_te = train_test_split(
-                valid_df[input_cols], yield_targets, valid_df[state_cols], valid_df[crude_col], test_size=0.15, random_state=42
+            yield_targets = valid_df[flow_cols].div(crude_series[valid_mask].values, axis=0)
+            X_tr, X_te, yf_tr, yf_te, ys_tr, ys_te = train_test_split(
+                valid_df[input_cols], yield_targets, valid_df[state_cols], test_size=0.15, random_state=42
             )
 
             baseline_stats = {
@@ -722,11 +740,11 @@ elif page == "2. Yield Prediction":
                 st.subheader("🌡️ Predicted Column Profile")
                 st.table(pd.DataFrame({
                     "Parameter": state_targets,
-                    "Predicted Value": [f"{v:.2f} {'°C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
+                    "Predicted Value": [f"{v:.2f} {'deg C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
                 }))
 
             # ==============================================================
-            # AUTONOMOUS RCO QUALITY @ 360°C PREDICTION
+            # AUTONOMOUS RCO QUALITY @ 360 C PREDICTION
             # ==============================================================
             st.divider()
             st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360 deg C")
