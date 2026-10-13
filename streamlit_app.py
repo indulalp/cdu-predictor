@@ -696,7 +696,7 @@ elif page == "2. Yield Prediction":
         crude_in_val = c_dens3.number_input(f"Crude Inlet Flow Rate ({crude_tag}) [t/h]", value=default_crude_flow, format="%.2f")
 
         # Compact Section 2: Operating Boundary Inputs (DCS parameters only) & Inline Action Button
-        st.markdown("#### 2. Operating Boundary Inputs (Pure DCS Parameters)")
+        st.markdown("#### 2. Operating Boundary Inputs (DCS Parameters)")
         input_data = {
             crude_tag: crude_in_val,
             'crude_api': calculated_api
