@@ -307,7 +307,7 @@ class PhysicsInformedYieldModel:
         return final_yields / np.sum(final_yields, axis=1, keepdims=True)
 
 class RCOQualityModel:
-    """Trained regression and thermodynamic sensitivity for RCO recovery @ 360°C"""
+    """Trained regression and thermodynamic sensitivity for RCO recovery @ 360 deg C"""
     def __init__(self):
         self.reg = Ridge(alpha=1.0)
         self.scaler = StandardScaler()
@@ -324,10 +324,21 @@ class RCOQualityModel:
         return np.clip(preds, 1.5, 20.0)
 
 # ==============================================================================
-# DEFAULT MODEL INITIALIZATION
+# DEFAULT MODEL INITIALIZATION (WITH AUTO RE-TRAIN CHECK)
 # ==============================================================================
 def train_default_guest_model_if_missing():
+    needs_retrain = False
     if not os.path.exists(GUEST_MODEL_FILE):
+        needs_retrain = True
+    else:
+        try:
+            test_pipe = joblib.load(GUEST_MODEL_FILE)
+            if "rco_model" not in test_pipe or test_pipe.get("training_rows", 0) != len(EXCEL_RECORDS):
+                needs_retrain = True
+        except Exception:
+            needs_retrain = True
+
+    if needs_retrain:
         df = get_demo_dataframe()
         s_col = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
         input_cols = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
@@ -354,7 +365,7 @@ def train_default_guest_model_if_missing():
         model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=250, learning_rate=0.03, random_state=42))
         model_states.fit(scaler_states.fit_transform(df[input_cols]), df[state_cols])
 
-        # RCO Recovery @ 360°C Model
+        # RCO Recovery @ 360 deg C Model
         rco_model = RCOQualityModel()
         rco_model.fit(df[input_cols], df['rco_rec_360'], baseline_stats)
 
@@ -482,7 +493,7 @@ if page == "1. Model Training & DCS Upload":
     
     rco_col = None
     if default_rco_col:
-        rco_col = c2.selectbox("RCO Recovery @ 360°C Target Column", options=rco_target_candidates, index=0)
+        rco_col = c2.selectbox("RCO Recovery @ 360 deg C Target Column", options=rco_target_candidates, index=0)
 
     save_as_protected = False
     model_tag = "guest_model"
@@ -666,8 +677,22 @@ elif page == "2. Yield Prediction":
                 elif "pa" in s.lower():
                     pred_states[k] += 0.80 * cot_delta
 
-            # Autonomous RCO Recovery @ 360°C prediction
-            pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
+            # Safe RCO Recovery @ 360 deg C prediction (handles both new and legacy models)
+            if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
+                pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
+            else:
+                cot_curr = float(input_data.get('cot_degC', stats.get('mean_cot', 350.0)))
+                steam_curr = float(input_data.get('stripping_steam_flow', stats.get('mean_steam', 15.0)))
+                fzp_curr = float(input_data.get('flash_zone_p_kgcm2', stats.get('mean_p', 1.50)))
+                api_curr = float(calculated_api)
+                base_val = stats.get('mean_rco_rec_360', 6.60)
+                pred_rco_rec_360 = float(np.clip(
+                    base_val - 0.05 * (cot_curr - stats.get('mean_cot', 350.0))
+                             - 0.18 * (steam_curr - stats.get('mean_steam', 15.0))
+                             + 1.20 * (fzp_curr - stats.get('mean_p', 1.50))
+                             - 0.08 * (api_curr - stats.get('mean_api', 34.0)),
+                    1.5, 20.0
+                ))
 
             # STEP 5 (Hook 5): Auto-sync simulation runs to GitHub database
             if st.session_state["authenticated"]:
@@ -704,11 +729,11 @@ elif page == "2. Yield Prediction":
             # AUTONOMOUS RCO QUALITY @ 360°C PREDICTION
             # ==============================================================
             st.divider()
-            st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360°C")
+            st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360 deg C")
             r_col1, r_col2, r_col3 = st.columns(3)
             
             r_col1.metric(
-                label="Predicted RCO Recovery @ 360°C", 
+                label="Predicted RCO Recovery @ 360 deg C", 
                 value=f"{pred_rco_rec_360:.2f} vol%"
             )
 
@@ -756,7 +781,7 @@ elif page == "2. Yield Prediction":
                 st.bar_chart(yield_data, color="#ff7f0e")
 
             # RCO Sensitivity Sweep Curve
-            st.markdown("### 📈 RCO Recovery @ 360°C vs Furnace COT")
+            st.markdown("### 📈 RCO Recovery @ 360 deg C vs Furnace COT")
             base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
             cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
 
@@ -766,11 +791,17 @@ elif page == "2. Yield Prediction":
                 temp_input = input_data.copy()
                 temp_input['cot_degC'] = temp
                 temp_df = pd.DataFrame([temp_input])
-                rco_sweep_vals.append(float(active_pipeline["rco_model"].predict(temp_df)[0]))
+                
+                if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
+                    rco_val = float(active_pipeline["rco_model"].predict(temp_df)[0])
+                else:
+                    rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
+                
+                rco_sweep_vals.append(rco_val)
                 yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
 
             rco_curve_df = pd.DataFrame(
-                {"RCO Rec @ 360°C (vol%)": rco_sweep_vals},
+                {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
                 index=np.round(cot_sweep, 1)
             )
             rco_curve_df.index.name = "Furnace COT (deg C)"
@@ -785,3 +816,140 @@ elif page == "2. Yield Prediction":
                     index=np.round(cot_sweep, 1)
                 )
                 sensitivity_df.index.name = "Furnace COT (deg C)"
+                st.line_chart(sensitivity_df)
+
+# ==============================================================================
+# PAGE 3: PROTECTED WORKSPACE (MEMBER EXCLUSIVE)
+# ==============================================================================
+elif page == "3. Protected Workspace & History":
+    st.header(f"🔒 Protected Workspace: `{st.session_state['username']}`")
+    conn = get_db_connection()
+
+    tab_my_models, tab_my_sims = st.tabs(["📁 My Saved Models", "📜 My Simulation History"])
+
+    with tab_my_models:
+        st.subheader("Your Isolated Models")
+        my_models = pd.read_sql_query(
+            "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC",
+            conn, params=(st.session_state['username'],)
+        )
+        if my_models.empty:
+            st.info("No protected models saved yet. Train one on Page 1 while signed in.")
+        else:
+            st.dataframe(my_models, use_container_width=True)
+
+    with tab_my_sims:
+        st.subheader("Your Saved Simulations")
+        my_sims = pd.read_sql_query(
+            "SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC",
+            conn, params=(st.session_state['username'],)
+        )
+        if my_sims.empty:
+            st.info("No logged simulations on record.")
+        else:
+            st.dataframe(my_sims, use_container_width=True)
+
+    conn.close()
+
+# ==============================================================================
+# PAGE 4: ADMIN GOVERNANCE & TELEMETRY (ADMIN EXCLUSIVE)
+# ==============================================================================
+elif page == "🛡️ Admin Audit & Telemetry":
+    st.header("🛡️ Enterprise Client Governance & Audit Portal")
+    conn = get_db_connection()
+
+    tab_manage, tab_client_inspect, tab_logs = st.tabs([
+        "👥 Client Account Provisioning", 
+        "🔍 Inspect & Modify Client Spaces", 
+        "📍 Access & Location Audit"
+    ])
+
+    with tab_manage:
+        st.subheader("Create New Client Account")
+        c_u1, c_u2, c_u3 = st.columns([2, 2, 1])
+        new_client_user = c_u1.text_input("New Client Username", placeholder="e.g. refinery_client_a")
+        new_client_pass = c_u2.text_input("Initial Password", placeholder="e.g. Pass@2026")
+        
+        if c_u3.button("Create Account", type="primary"):
+            if new_client_user and new_client_pass:
+                ok, msg = create_client_user(new_client_user, new_client_pass)
+                if ok:
+                    st.success(msg)
+                    st.rerun()
+                else:
+                    st.error(msg)
+            else:
+                st.warning("Please provide both username and password.")
+
+        st.divider()
+        st.subheader("Existing Accounts")
+        users_df = pd.read_sql_query("SELECT username, role FROM users ORDER BY role ASC, username ASC", conn)
+        st.dataframe(users_df, use_container_width=True)
+
+        st.markdown("#### Password Reset / Account Management")
+        client_list = [u for u in users_df["username"].tolist() if u != "admin"]
+        if client_list:
+            c_sel, c_np, c_btn1, c_btn2 = st.columns([2, 2, 1, 1])
+            selected_client = c_sel.selectbox("Select Client", options=client_list)
+            reset_pw = c_np.text_input("New Password", placeholder="Enter new password")
+            
+            if c_btn1.button("Reset Password"):
+                if reset_pw:
+                    reset_client_password(selected_client, reset_pw)
+                    st.success(f"Password updated for `{selected_client}`.")
+                else:
+                    st.error("Enter a valid password.")
+
+            if c_btn2.button("Delete Client", type="secondary"):
+                delete_client_user(selected_client)
+                st.warning(f"Client `{selected_client}` deleted.")
+                st.rerun()
+
+    with tab_client_inspect:
+        st.subheader("Client Data Inspector & Editor")
+        all_clients = [u for u in users_df["username"].tolist() if u != "admin"]
+
+        if not all_clients:
+            st.info("No registered clients available to inspect.")
+        else:
+            chosen_user = st.selectbox("Select Client Profile to Inspect:", options=all_clients)
+            
+            col_m, col_s = st.columns(2)
+            with col_m:
+                st.markdown(f"**Models Saved by `{chosen_user}`:**")
+                client_models = pd.read_sql_query(
+                    "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ?",
+                    conn, params=(chosen_user,)
+                )
+                if client_models.empty:
+                    st.caption("No models saved by this client.")
+                else:
+                    st.dataframe(client_models, use_container_width=True)
+                    del_m_id = st.selectbox("Delete Model ID", options=client_models["id"].tolist(), key="del_m_key")
+                    if st.button("Delete Selected Model", key="del_m_btn"):
+                        m_row = client_models[client_models["id"] == del_m_id].iloc[0]
+                        if os.path.exists(m_row["model_path"]):
+                            os.remove(m_row["model_path"])
+                        conn.execute("DELETE FROM protected_models WHERE id = ?", (del_m_id,))
+                        conn.commit()
+                        sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Admin removed model {del_m_id}")
+                        st.success(f"Removed model `{m_row['model_tag']}`.")
+                        st.rerun()
+
+            with col_s:
+                st.markdown(f"**Simulations Run by `{chosen_user}`:**")
+                client_sims = pd.read_sql_query(
+                    "SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC",
+                    conn, params=(chosen_user,)
+                )
+                if client_sims.empty:
+                    st.caption("No simulations logged for this client.")
+                else:
+                    st.dataframe(client_sims, use_container_width=True)
+
+    with tab_logs:
+        st.subheader("Global Sign-in Geolocation & Telemetry")
+        access_df = pd.read_sql_query("SELECT username, login_time, ip_address, city, region, country FROM access_logs ORDER BY login_time DESC", conn)
+        st.dataframe(access_df, use_container_width=True)
+
+    conn.close()
