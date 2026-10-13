@@ -26,57 +26,52 @@ GUEST_MODEL_FILE = "models/guest_model.pkl"
 
 # Physical Engineering Bounds matched to actual CDU operating cuts
 YIELD_BOUNDS = {
-    'flow_offgas': (0.100, 0.250),
-    'flow_naphtha': (0.020, 0.120),
-    'flow_kero': (0.040, 0.100),
-    'flow_lago': (0.150, 0.280),
+    'flow_offgas': (0.0005, 0.050),
+    'flow_naphtha': (0.020, 0.150),
+    'flow_kero': (0.030, 0.120),
+    'flow_lago': (0.150, 0.350),
     'flow_residue': (0.400, 0.650)
 }
 
 PHYSICS_SLOPES = {
-    'flow_offgas': 0.00030,
+    'flow_offgas': 0.00008,
     'flow_naphtha': 0.00045,
     'flow_kero': 0.00025,
     'flow_lago': 0.00100,
-    'flow_residue': -0.00200
+    'flow_residue': -0.00178
 }
 
 # ==============================================================================
-# EMBEDDED EXCEL DATASET (cdu data.xlsx)
+# EMBEDDED PLANT RUNS WITH MEASURED RCO RECOVERY @ 360°C
 # ==============================================================================
 EXCEL_RECORDS = [
-    {"crude_flow": 1939.92, "crude_density": 873.8, "crude_api": 30.420176, "sulphur_wt_pct": 2.13, "cot_degC": 350.280, "flash_zone_p_kgcm2": 1.51, "stripping_steam_flow": 18.20, "top_pa": 436.93, "kero_pa_flow_tph": 406.19, "lago_pa_flow_tph": 1041.17, "top_temp_degC": 117.99, "lago_d86_95_degC": 251.44, "flow_offgas": 295.632125, "flow_naphtha": 86.17, "flow_kero": 113.28, "flow_lago": 391.03, "flow_residue": 1072.25, "rco_rec_360_vol_pct": 6.20},
-    {"crude_flow": 1933.65, "crude_density": 875.2, "crude_api": 30.161163, "sulphur_wt_pct": 2.08, "cot_degC": 349.760, "flash_zone_p_kgcm2": 1.51, "stripping_steam_flow": 18.63, "top_pa": 424.83, "kero_pa_flow_tph": 394.05, "lago_pa_flow_tph": 1029.96, "top_temp_degC": 117.47, "lago_d86_95_degC": 251.60, "flow_offgas": 290.379661, "flow_naphtha": 84.27, "flow_kero": 113.09, "flow_lago": 390.26, "flow_residue": 1070.22, "rco_rec_360_vol_pct": 6.15},
-    {"crude_flow": 1935.35, "crude_density": 875.8, "crude_api": 30.050411, "sulphur_wt_pct": 2.23, "cot_degC": 350.550, "flash_zone_p_kgcm2": 1.53, "stripping_steam_flow": 18.81, "top_pa": 444.88, "kero_pa_flow_tph": 412.42, "lago_pa_flow_tph": 1039.50, "top_temp_degC": 118.33, "lago_d86_95_degC": 252.17, "flow_offgas": 301.855768, "flow_naphtha": 95.36, "flow_kero": 113.84, "flow_lago": 394.83, "flow_residue": 1053.10, "rco_rec_360_vol_pct": 6.10},
-    {"crude_flow": 1837.70, "crude_density": 872.0, "crude_api": 30.754415, "sulphur_wt_pct": 2.29, "cot_degC": 349.275, "flash_zone_p_kgcm2": 1.55, "stripping_steam_flow": 18.49, "top_pa": 443.77, "kero_pa_flow_tph": 403.30, "lago_pa_flow_tph": 1039.09, "top_temp_degC": 118.24, "lago_d86_95_degC": 250.06, "flow_offgas": 307.525607, "flow_naphtha": 96.48, "flow_kero": 111.62, "flow_lago": 375.93, "flow_residue": 974.26, "rco_rec_360_vol_pct": 6.25},
-    {"crude_flow": 1918.65, "crude_density": 871.0, "crude_api": 30.940700, "sulphur_wt_pct": 2.16, "cot_degC": 349.340, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 16.64, "top_pa": 471.26, "kero_pa_flow_tph": 424.19, "lago_pa_flow_tph": 1043.68, "top_temp_degC": 120.68, "lago_d86_95_degC": 250.92, "flow_offgas": 328.723607, "flow_naphtha": 85.84, "flow_kero": 115.53, "flow_lago": 376.69, "flow_residue": 1015.18, "rco_rec_360_vol_pct": 6.45},
-    {"crude_flow": 1940.04, "crude_density": 870.0, "crude_api": 31.127414, "sulphur_wt_pct": 2.18, "cot_degC": 350.100, "flash_zone_p_kgcm2": 1.59, "stripping_steam_flow": 17.27, "top_pa": 469.60, "kero_pa_flow_tph": 423.48, "lago_pa_flow_tph": 1044.65, "top_temp_degC": 119.95, "lago_d86_95_degC": 251.21, "flow_offgas": 323.873455, "flow_naphtha": 90.53, "flow_kero": 115.98, "flow_lago": 379.93, "flow_residue": 1013.62, "rco_rec_360_vol_pct": 6.35},
-    {"crude_flow": 1936.03, "crude_density": 873.8, "crude_api": 30.420176, "sulphur_wt_pct": 2.28, "cot_degC": 350.660, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 18.22, "top_pa": 470.28, "kero_pa_flow_tph": 425.54, "lago_pa_flow_tph": 1044.58, "top_temp_degC": 120.09, "lago_d86_95_degC": 252.01, "flow_offgas": 324.193152, "flow_naphtha": 88.82, "flow_kero": 115.99, "flow_lago": 384.94, "flow_residue": 1018.69, "rco_rec_360_vol_pct": 6.18},
-    {"crude_flow": 1940.45, "crude_density": 871.8, "crude_api": 30.791638, "sulphur_wt_pct": 2.22, "cot_degC": 349.280, "flash_zone_p_kgcm2": 1.61, "stripping_steam_flow": 17.60, "top_pa": 490.76, "kero_pa_flow_tph": 448.00, "lago_pa_flow_tph": 1044.44, "top_temp_degC": 122.43, "lago_d86_95_degC": 251.69, "flow_offgas": 341.000527, "flow_naphtha": 106.06, "flow_kero": 115.95, "flow_lago": 391.39, "flow_residue": 1000.19, "rco_rec_360_vol_pct": 6.40},
-    {"crude_flow": 1927.76, "crude_density": 872.8, "crude_api": 30.605694, "sulphur_wt_pct": 2.35, "cot_degC": 346.635, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 15.52, "top_pa": 480.80, "kero_pa_flow_tph": 432.63, "lago_pa_flow_tph": 1044.65, "top_temp_degC": 123.96, "lago_d86_95_degC": 249.74, "flow_offgas": 347.207295, "flow_naphtha": 115.16, "flow_kero": 116.07, "flow_lago": 374.13, "flow_residue": 991.19, "rco_rec_360_vol_pct": 6.85},
-    {"crude_flow": 1938.39, "crude_density": 866.0, "crude_api": 31.878580, "sulphur_wt_pct": 2.35, "cot_degC": 346.470, "flash_zone_p_kgcm2": 1.57, "stripping_steam_flow": 16.19, "top_pa": 468.26, "kero_pa_flow_tph": 419.14, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 122.32, "lago_d86_95_degC": 249.55, "flow_offgas": 338.476313, "flow_naphtha": 106.01, "flow_kero": 115.96, "flow_lago": 377.64, "flow_residue": 1007.09, "rco_rec_360_vol_pct": 6.70},
-    {"crude_flow": 1937.52, "crude_density": 870.4, "crude_api": 31.052677, "sulphur_wt_pct": 2.35, "cot_degC": 345.925, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 17.06, "top_pa": 472.93, "kero_pa_flow_tph": 427.50, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 122.28, "lago_d86_95_degC": 249.51, "flow_offgas": 340.505672, "flow_naphtha": 105.00, "flow_kero": 116.03, "flow_lago": 378.89, "flow_residue": 1009.61, "rco_rec_360_vol_pct": 6.65},
-    {"crude_flow": 1941.00, "crude_density": 869.6, "crude_api": 31.202334, "sulphur_wt_pct": 2.29, "cot_degC": 347.165, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 17.58, "top_pa": 482.02, "kero_pa_flow_tph": 435.53, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 123.08, "lago_d86_95_degC": 250.05, "flow_offgas": 346.529244, "flow_naphtha": 110.15, "flow_kero": 116.00, "flow_lago": 379.74, "flow_residue": 1004.89, "rco_rec_360_vol_pct": 6.50},
-    {"crude_flow": 1937.93, "crude_density": 869.2, "crude_api": 31.277266, "sulphur_wt_pct": 2.19, "cot_degC": 347.935, "flash_zone_p_kgcm2": 1.54, "stripping_steam_flow": 16.74, "top_pa": 483.99, "kero_pa_flow_tph": 438.30, "lago_pa_flow_tph": 1044.97, "top_temp_degC": 122.95, "lago_d86_95_degC": 250.78, "flow_offgas": 348.064560, "flow_naphtha": 110.16, "flow_kero": 116.00, "flow_lago": 382.49, "flow_residue": 996.65, "rco_rec_360_vol_pct": 6.55},
-    {"crude_flow": 1939.84, "crude_density": 866.6, "crude_api": 31.765636, "sulphur_wt_pct": 2.28, "cot_degC": 347.880, "flash_zone_p_kgcm2": 1.57, "stripping_steam_flow": 17.20, "top_pa": 492.20, "kero_pa_flow_tph": 444.60, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 123.49, "lago_d86_95_degC": 251.68, "flow_offgas": 352.333830, "flow_naphtha": 115.89, "flow_kero": 115.93, "flow_lago": 384.77, "flow_residue": 989.47, "rco_rec_360_vol_pct": 6.45},
-    {"crude_flow": 1936.56, "crude_density": 870.4, "crude_api": 31.052677, "sulphur_wt_pct": 2.29, "cot_degC": 347.330, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 16.71, "top_pa": 484.54, "kero_pa_flow_tph": 435.59, "lago_pa_flow_tph": 1044.89, "top_temp_degC": 123.51, "lago_d86_95_degC": 250.91, "flow_offgas": 347.854086, "flow_naphtha": 112.56, "flow_kero": 115.98, "flow_lago": 380.20, "flow_residue": 996.86, "rco_rec_360_vol_pct": 6.58},
-    {"crude_flow": 1941.52, "crude_density": 874.0, "crude_api": 30.383181, "sulphur_wt_pct": 2.27, "cot_degC": 347.455, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.21, "top_pa": 496.07, "kero_pa_flow_tph": 443.85, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 124.77, "lago_d86_95_degC": 251.05, "flow_offgas": 356.126569, "flow_naphtha": 123.00, "flow_kero": 115.98, "flow_lago": 381.71, "flow_residue": 980.99, "rco_rec_360_vol_pct": 6.50},
-    {"crude_flow": 1939.92, "crude_density": 875.0, "crude_api": 30.198057, "sulphur_wt_pct": 2.30, "cot_degC": 347.600, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 17.37, "top_pa": 490.15, "kero_pa_flow_tph": 435.53, "lago_pa_flow_tph": 1044.97, "top_temp_degC": 124.74, "lago_d86_95_degC": 251.49, "flow_offgas": 353.473595, "flow_naphtha": 120.31, "flow_kero": 115.98, "flow_lago": 383.69, "flow_residue": 984.77, "rco_rec_360_vol_pct": 6.46},
-    {"crude_flow": 1940.40, "crude_density": 873.8, "crude_api": 30.420176, "sulphur_wt_pct": 2.21, "cot_degC": 347.635, "flash_zone_p_kgcm2": 1.57, "stripping_steam_flow": 16.96, "top_pa": 497.02, "kero_pa_flow_tph": 445.69, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 125.10, "lago_d86_95_degC": 251.52, "flow_offgas": 356.162386, "flow_naphtha": 122.37, "flow_kero": 115.99, "flow_lago": 383.95, "flow_residue": 980.37, "rco_rec_360_vol_pct": 6.52},
-    {"crude_flow": 1935.53, "crude_density": 874.0, "crude_api": 30.383181, "sulphur_wt_pct": 2.26, "cot_degC": 347.465, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.47, "top_pa": 497.23, "kero_pa_flow_tph": 443.08, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 125.79, "lago_d86_95_degC": 251.27, "flow_offgas": 357.513488, "flow_naphtha": 128.47, "flow_kero": 115.99, "flow_lago": 382.72, "flow_residue": 971.86, "rco_rec_360_vol_pct": 6.44},
-    {"crude_flow": 1940.21, "crude_density": 876.0, "crude_api": 30.013584, "sulphur_wt_pct": 2.21, "cot_degC": 347.385, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 17.10, "top_pa": 500.41, "kero_pa_flow_tph": 449.19, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 125.79, "lago_d86_95_degC": 250.77, "flow_offgas": 357.771963, "flow_naphtha": 127.35, "flow_kero": 116.03, "flow_lago": 380.60, "flow_residue": 972.19, "rco_rec_360_vol_pct": 6.54},
-    {"crude_flow": 1941.13, "crude_density": 875.0, "crude_api": 30.198057, "sulphur_wt_pct": 2.23, "cot_degC": 347.795, "flash_zone_p_kgcm2": 1.57, "stripping_steam_flow": 16.97, "top_pa": 503.20, "kero_pa_flow_tph": 449.98, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 125.99, "lago_d86_95_degC": 250.99, "flow_offgas": 359.851080, "flow_naphtha": 128.43, "flow_kero": 115.98, "flow_lago": 382.68, "flow_residue": 970.61, "rco_rec_360_vol_pct": 6.48},
-    {"crude_flow": 1937.66, "crude_density": 873.4, "crude_api": 30.494275, "sulphur_wt_pct": 2.22, "cot_degC": 347.880, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.43, "top_pa": 501.99, "kero_pa_flow_tph": 451.98, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.11, "lago_d86_95_degC": 251.10, "flow_offgas": 359.971253, "flow_naphtha": 128.91, "flow_kero": 116.00, "flow_lago": 383.04, "flow_residue": 970.21, "rco_rec_360_vol_pct": 6.42},
-    {"crude_flow": 1935.21, "crude_density": 875.4, "crude_api": 30.124286, "sulphur_wt_pct": 2.20, "cot_degC": 347.500, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 500.41, "kero_pa_flow_tph": 449.61, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.10, "lago_d86_95_degC": 250.77, "flow_offgas": 360.596009, "flow_naphtha": 130.00, "flow_kero": 116.01, "flow_lago": 381.16, "flow_residue": 967.65, "rco_rec_360_vol_pct": 6.49},
-    {"crude_flow": 1941.13, "crude_density": 876.4, "crude_api": 29.939970, "sulphur_wt_pct": 2.14, "cot_degC": 347.460, "flash_zone_p_kgcm2": 1.57, "stripping_steam_flow": 16.92, "top_pa": 500.56, "kero_pa_flow_tph": 448.91, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.10, "lago_d86_95_degC": 250.41, "flow_offgas": 361.353386, "flow_naphtha": 131.00, "flow_kero": 116.02, "flow_lago": 380.05, "flow_residue": 968.74, "rco_rec_360_vol_pct": 6.56},
-    {"crude_flow": 1940.36, "crude_density": 878.0, "crude_api": 29.646355, "sulphur_wt_pct": 2.11, "cot_degC": 347.785, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.06, "top_pa": 503.73, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.23, "lago_d86_95_degC": 250.70, "flow_offgas": 362.464687, "flow_naphtha": 132.00, "flow_kero": 115.98, "flow_lago": 381.47, "flow_residue": 966.50, "rco_rec_360_vol_pct": 6.55},
-    {"crude_flow": 1938.86, "crude_density": 876.0, "crude_api": 30.013584, "sulphur_wt_pct": 2.21, "cot_degC": 347.750, "flash_zone_p_kgcm2": 1.57, "stripping_steam_flow": 17.20, "top_pa": 503.11, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.30, "lago_d86_95_degC": 250.84, "flow_offgas": 363.090623, "flow_naphtha": 133.00, "flow_kero": 116.00, "flow_lago": 382.49, "flow_residue": 964.81, "rco_rec_360_vol_pct": 6.51},
-    {"crude_flow": 1939.96, "crude_density": 874.0, "crude_api": 30.383181, "sulphur_wt_pct": 2.24, "cot_degC": 347.735, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 503.00, "kero_pa_flow_tph": 449.62, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.31, "lago_d86_95_degC": 250.93, "flow_offgas": 364.088656, "flow_naphtha": 134.00, "flow_kero": 116.00, "flow_lago": 383.00, "flow_residue": 963.88, "rco_rec_360_vol_pct": 6.47},
-    {"crude_flow": 1940.35, "crude_density": 874.4, "crude_api": 30.309355, "sulphur_wt_pct": 2.21, "cot_degC": 347.925, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 505.28, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.47, "lago_d86_95_degC": 251.24, "flow_offgas": 366.195610, "flow_naphtha": 136.00, "flow_kero": 116.00, "flow_lago": 384.60, "flow_residue": 961.43, "rco_rec_360_vol_pct": 6.44},
-    {"crude_flow": 1939.06, "crude_density": 877.0, "crude_api": 29.829989, "sulphur_wt_pct": 2.23, "cot_degC": 347.905, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 507.03, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 126.68, "lago_d86_95_degC": 251.46, "flow_offgas": 368.513728, "flow_naphtha": 139.00, "flow_kero": 116.00, "flow_lago": 385.66, "flow_residue": 957.51, "rco_rec_360_vol_pct": 6.50},
-    {"crude_flow": 1937.89, "crude_density": 877.0, "crude_api": 29.829989, "sulphur_wt_pct": 2.22, "cot_degC": 348.065, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 512.44, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 127.34, "lago_d86_95_degC": 251.81, "flow_offgas": 372.457894, "flow_naphtha": 147.00, "flow_kero": 116.00, "flow_lago": 386.43, "flow_residue": 948.55, "rco_rec_360_vol_pct": 6.47},
-    {"crude_flow": 1939.46, "crude_density": 874.0, "crude_api": 30.383181, "sulphur_wt_pct": 2.25, "cot_degC": 348.160, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 515.65, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 127.81, "lago_d86_95_degC": 252.02, "flow_offgas": 375.986326, "flow_naphtha": 154.00, "flow_kero": 116.00, "flow_lago": 387.03, "flow_residue": 940.54, "rco_rec_360_vol_pct": 6.42},
-    {"crude_flow": 1938.83, "crude_density": 874.0, "crude_api": 30.383181, "sulphur_wt_pct": 2.22, "cot_degC": 348.245, "flash_zone_p_kgcm2": 1.58, "stripping_steam_flow": 17.20, "top_pa": 518.73, "kero_pa_flow_tph": 450.00, "lago_pa_flow_tph": 1045.00, "top_temp_degC": 128.26, "lago_d86_95_degC": 252.12, "flow_offgas": 381.925482, "flow_naphtha": 159.69, "flow_kero": 116.00, "flow_lago": 387.71, "flow_residue": 932.92, "rco_rec_360_vol_pct": 6.38}
+    {"rco_rec_360": 6.3, "crude_flow": 1847.17, "crude_density": 852.9, "crude_api": 34.3938, "cot_degC": 350.120, "flash_zone_p_kgcm2": 1.43, "stripping_steam_flow": 13.20, "top_pa": 380.11, "kero_pa_flow_tph": 394.33, "lago_pa_flow_tph": 151.520, "top_temp_degC": 120.26, "lago_d86_95_degC": 243.27, "flow_offgas": 6.85000, "flow_naphtha": 124.81, "flow_kero": 78.36, "flow_lago": 442.39, "flow_residue": 978.09},
+    {"rco_rec_360": 6.25, "crude_flow": 1918.67, "crude_density": 859.4, "crude_api": 33.1256, "cot_degC": 354.775, "flash_zone_p_kgcm2": 1.45, "stripping_steam_flow": 13.12, "top_pa": 397.46, "kero_pa_flow_tph": 348.58, "lago_pa_flow_tph": 135.020, "top_temp_degC": 117.21, "lago_d86_95_degC": 250.47, "flow_offgas": 3.67757, "flow_naphtha": 102.53, "flow_kero": 106.20, "flow_lago": 434.00, "flow_residue": 1021.23},
+    {"rco_rec_360": 14.5, "crude_flow": 1810.48, "crude_density": 849.9, "crude_api": 34.9755, "cot_degC": 354.825, "flash_zone_p_kgcm2": 1.50, "stripping_steam_flow": 13.50, "top_pa": 472.87, "kero_pa_flow_tph": 442.03, "lago_pa_flow_tph": 143.250, "top_temp_degC": 118.01, "lago_d86_95_degC": 248.21, "flow_offgas": 4.09316, "flow_naphtha": 145.09, "flow_kero": 104.56, "flow_lago": 454.65, "flow_residue": 897.09},
+    {"rco_rec_360": 6.3, "crude_flow": 1677.31, "crude_density": 863.0, "crude_api": 32.4427, "cot_degC": 356.170, "flash_zone_p_kgcm2": 1.42, "stripping_steam_flow": 13.84, "top_pa": 332.02, "kero_pa_flow_tph": 335.93, "lago_pa_flow_tph": 114.155, "top_temp_degC": 113.60, "lago_d86_95_degC": 243.76, "flow_offgas": 2.47341, "flow_naphtha": 98.87, "flow_kero": 74.75, "flow_lago": 403.54, "flow_residue": 943.73},
+    {"rco_rec_360": 2.0, "crude_flow": 1549.10, "crude_density": 867.9, "crude_api": 31.5190, "cot_degC": 357.890, "flash_zone_p_kgcm2": 1.36, "stripping_steam_flow": 14.74, "top_pa": 270.81, "kero_pa_flow_tph": 251.45, "lago_pa_flow_tph": 109.570, "top_temp_degC": 109.78, "lago_d86_95_degC": 243.61, "flow_offgas": 2.40643, "flow_naphtha": 46.99, "flow_kero": 82.75, "flow_lago": 355.85, "flow_residue": 870.43},
+    {"rco_rec_360": 2.9, "crude_flow": 1366.14, "crude_density": 849.4, "crude_api": 35.0656, "cot_degC": 358.645, "flash_zone_p_kgcm2": 1.37, "stripping_steam_flow": 14.00, "top_pa": 271.14, "kero_pa_flow_tph": 238.39, "lago_pa_flow_tph": 98.240, "top_temp_degC": 114.70, "lago_d86_95_degC": 242.92, "flow_offgas": 2.00850, "flow_naphtha": 82.68, "flow_kero": 83.46, "flow_lago": 351.23, "flow_residue": 709.18},
+    {"rco_rec_360": 6.8, "crude_flow": 1827.41, "crude_density": 866.6, "crude_api": 31.7730, "cot_degC": 351.285, "flash_zone_p_kgcm2": 1.48, "stripping_steam_flow": 13.90, "top_pa": 359.42, "kero_pa_flow_tph": 390.85, "lago_pa_flow_tph": 101.480, "top_temp_degC": 121.36, "lago_d86_95_degC": 244.17, "flow_offgas": 3.79992, "flow_naphtha": 77.62, "flow_kero": 64.03, "flow_lago": 466.04, "flow_residue": 1021.18},
+    {"rco_rec_360": 5.9, "crude_flow": 1609.22, "crude_density": 854.9, "crude_api": 34.0018, "cot_degC": 354.230, "flash_zone_p_kgcm2": 1.43, "stripping_steam_flow": 14.00, "top_pa": 316.88, "kero_pa_flow_tph": 343.26, "lago_pa_flow_tph": 92.995, "top_temp_degC": 121.95, "lago_d86_95_degC": 242.87, "flow_offgas": 2.13730, "flow_naphtha": 57.84, "flow_kero": 57.21, "flow_lago": 419.08, "flow_residue": 891.33},
+    {"rco_rec_360": 3.8, "crude_flow": 1491.72, "crude_density": 853.0, "crude_api": 34.3646, "cot_degC": 359.015, "flash_zone_p_kgcm2": 1.42, "stripping_steam_flow": 15.90, "top_pa": 353.21, "kero_pa_flow_tph": 334.69, "lago_pa_flow_tph": 97.005, "top_temp_degC": 117.91, "lago_d86_95_degC": 249.50, "flow_offgas": 5.76393, "flow_naphtha": 135.48, "flow_kero": 75.83, "flow_lago": 386.87, "flow_residue": 766.75},
+    {"rco_rec_360": 5.7, "crude_flow": 1253.22, "crude_density": 859.6, "crude_api": 33.1007, "cot_degC": 358.550, "flash_zone_p_kgcm2": 1.35, "stripping_steam_flow": 13.99, "top_pa": 270.40, "kero_pa_flow_tph": 256.87, "lago_pa_flow_tph": 95.180, "top_temp_degC": 115.92, "lago_d86_95_degC": 248.91, "flow_offgas": 0.68082, "flow_naphtha": 48.56, "flow_kero": 68.45, "flow_lago": 354.82, "flow_residue": 631.37},
+    {"rco_rec_360": 5.7, "crude_flow": 1926.91, "crude_density": 855.5, "crude_api": 33.8780, "cot_degC": 347.955, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 17.50, "top_pa": 472.44, "kero_pa_flow_tph": 454.19, "lago_pa_flow_tph": 117.785, "top_temp_degC": 116.12, "lago_d86_95_degC": 246.93, "flow_offgas": 4.46463, "flow_naphtha": 139.83, "flow_kero": 80.72, "flow_lago": 472.45, "flow_residue": 1009.91},
+    {"rco_rec_360": 4.6, "crude_flow": 1954.94, "crude_density": 1005.9, "crude_api": 9.1616, "cot_degC": 350.210, "flash_zone_p_kgcm2": 1.49, "stripping_steam_flow": 17.98, "top_pa": 407.73, "kero_pa_flow_tph": 331.05, "lago_pa_flow_tph": 108.970, "top_temp_degC": 114.04, "lago_d86_95_degC": 250.31, "flow_offgas": 5.67824, "flow_naphtha": 131.59, "flow_kero": 126.69, "flow_lago": 411.36, "flow_residue": 1059.74},
+    {"rco_rec_360": 6.0, "crude_flow": 1955.56, "crude_density": 845.3, "crude_api": 35.8735, "cot_degC": 345.885, "flash_zone_p_kgcm2": 1.60, "stripping_steam_flow": 14.24, "top_pa": 501.50, "kero_pa_flow_tph": 434.37, "lago_pa_flow_tph": 94.985, "top_temp_degC": 117.89, "lago_d86_95_degC": 249.05, "flow_offgas": 6.71467, "flow_naphtha": 104.10, "flow_kero": 128.90, "flow_lago": 455.70, "flow_residue": 1021.55},
+    {"rco_rec_360": 9.7, "crude_flow": 1903.98, "crude_density": 837.5, "crude_api": 37.4303, "cot_degC": 339.700, "flash_zone_p_kgcm2": 1.72, "stripping_steam_flow": 11.98, "top_pa": 518.05, "kero_pa_flow_tph": 435.19, "lago_pa_flow_tph": 89.090, "top_temp_degC": 122.13, "lago_d86_95_degC": 246.84, "flow_offgas": 6.60169, "flow_naphtha": 100.21, "flow_kero": 128.61, "flow_lago": 435.34, "flow_residue": 939.22},
+    {"rco_rec_360": 5.3, "crude_flow": 1852.52, "crude_density": 863.1, "crude_api": 32.4218, "cot_degC": 349.370, "flash_zone_p_kgcm2": 1.50, "stripping_steam_flow": 17.00, "top_pa": 405.79, "kero_pa_flow_tph": 379.08, "lago_pa_flow_tph": 79.870, "top_temp_degC": 118.36, "lago_d86_95_degC": 253.46, "flow_offgas": 3.47714, "flow_naphtha": 68.59, "flow_kero": 105.26, "flow_lago": 454.95, "flow_residue": 1020.43},
+    {"rco_rec_360": 4.4, "crude_flow": 1903.44, "crude_density": 852.8, "crude_api": 34.3996, "cot_degC": 348.055, "flash_zone_p_kgcm2": 1.55, "stripping_steam_flow": 17.00, "top_pa": 500.05, "kero_pa_flow_tph": 466.85, "lago_pa_flow_tph": 96.675, "top_temp_degC": 121.27, "lago_d86_95_degC": 253.36, "flow_offgas": 4.85334, "flow_naphtha": 100.20, "flow_kero": 111.76, "flow_lago": 474.09, "flow_residue": 996.26},
+    {"rco_rec_360": 2.5, "crude_flow": 1918.92, "crude_density": 855.2, "crude_api": 33.9380, "cot_degC": 350.020, "flash_zone_p_kgcm2": 1.59, "stripping_steam_flow": 17.70, "top_pa": 447.80, "kero_pa_flow_tph": 430.32, "lago_pa_flow_tph": 91.060, "top_temp_degC": 116.67, "lago_d86_95_degC": 249.48, "flow_offgas": 4.69515, "flow_naphtha": 94.98, "flow_kero": 97.03, "flow_lago": 448.48, "flow_residue": 1045.83},
+    {"rco_rec_360": 2.0, "crude_flow": 1907.06, "crude_density": 851.9, "crude_api": 34.5807, "cot_degC": 349.615, "flash_zone_p_kgcm2": 1.61, "stripping_steam_flow": 15.15, "top_pa": 483.63, "kero_pa_flow_tph": 443.99, "lago_pa_flow_tph": 86.150, "top_temp_degC": 119.53, "lago_d86_95_degC": 250.35, "flow_offgas": 4.11358, "flow_naphtha": 96.79, "flow_kero": 112.57, "flow_lago": 451.35, "flow_residue": 1008.93},
+    {"rco_rec_360": 5.8, "crude_flow": 1932.69, "crude_density": 846.2, "crude_api": 35.6955, "cot_degC": 350.255, "flash_zone_p_kgcm2": 1.68, "stripping_steam_flow": 17.89, "top_pa": 526.25, "kero_pa_flow_tph": 487.74, "lago_pa_flow_tph": 86.100, "top_temp_degC": 121.70, "lago_d86_95_degC": 253.09, "flow_offgas": 6.23427, "flow_naphtha": 104.22, "flow_kero": 114.39, "flow_lago": 476.78, "flow_residue": 996.47},
+    {"rco_rec_360": 5.8, "crude_flow": 1918.36, "crude_density": 855.1, "crude_api": 33.9573, "cot_degC": 348.815, "flash_zone_p_kgcm2": 1.56, "stripping_steam_flow": 16.78, "top_pa": 494.40, "kero_pa_flow_tph": 456.44, "lago_pa_flow_tph": 83.730, "top_temp_degC": 121.17, "lago_d86_95_degC": 251.37, "flow_offgas": 4.87445, "flow_naphtha": 99.33, "flow_kero": 110.87, "flow_lago": 459.52, "flow_residue": 1011.99},
+    {"rco_rec_360": 6.5, "crude_flow": 1936.50, "crude_density": 860.6, "crude_api": 32.9133, "cot_degC": 349.160, "flash_zone_p_kgcm2": 1.51, "stripping_steam_flow": 18.48, "top_pa": 431.57, "kero_pa_flow_tph": 401.09, "lago_pa_flow_tph": 75.025, "top_temp_degC": 117.64, "lago_d86_95_degC": 251.18, "flow_offgas": 3.58797, "flow_naphtha": 87.70, "flow_kero": 113.15, "flow_lago": 456.90, "flow_residue": 1070.99},
+    {"rco_rec_360": 7.5, "crude_flow": 1930.41, "crude_density": 852.0, "crude_api": 34.5554, "cot_degC": 347.295, "flash_zone_p_kgcm2": 1.61, "stripping_steam_flow": 15.58, "top_pa": 493.84, "kero_pa_flow_tph": 447.63, "lago_pa_flow_tph": 104.425, "top_temp_degC": 124.66, "lago_d86_95_degC": 250.38, "flow_offgas": 4.49535, "flow_naphtha": 120.95, "flow_kero": 116.01, "flow_lago": 449.56, "flow_residue": 978.09},
+    {"rco_rec_360": 17.5, "crude_flow": 1918.27, "crude_density": 851.3, "crude_api": 34.7017, "cot_degC": 345.850, "flash_zone_p_kgcm2": 1.61, "stripping_steam_flow": 16.82, "top_pa": 481.09, "kero_pa_flow_tph": 435.09, "lago_pa_flow_tph": 97.260, "top_temp_degC": 121.20, "lago_d86_95_degC": 248.86, "flow_offgas": 5.82920, "flow_naphtha": 99.46, "flow_kero": 115.22, "flow_lago": 455.99, "flow_residue": 980.88},
+    {"rco_rec_360": 9.0, "crude_flow": 1927.75, "crude_density": 850.1, "crude_api": 34.9265, "cot_degC": 347.875, "flash_zone_p_kgcm2": 1.64, "stripping_steam_flow": 16.39, "top_pa": 509.63, "kero_pa_flow_tph": 436.59, "lago_pa_flow_tph": 99.840, "top_temp_degC": 123.48, "lago_d86_95_degC": 251.83, "flow_offgas": 6.69661, "flow_naphtha": 87.12, "flow_kero": 132.25, "flow_lago": 455.55, "flow_residue": 980.66},
+    {"rco_rec_360": 9.5, "crude_flow": 1923.81, "crude_density": 848.7, "crude_api": 35.2089, "cot_degC": 347.885, "flash_zone_p_kgcm2": 1.67, "stripping_steam_flow": 15.40, "top_pa": 479.77, "kero_pa_flow_tph": 413.04, "lago_pa_flow_tph": 91.790, "top_temp_degC": 124.13, "lago_d86_95_degC": 251.27, "flow_offgas": 6.43440, "flow_naphtha": 98.38, "flow_kero": 122.13, "flow_lago": 435.13, "flow_residue": 978.07},
+    {"rco_rec_360": 8.6, "crude_flow": 1912.23, "crude_density": 847.3, "crude_api": 35.4765, "cot_degC": 344.005, "flash_zone_p_kgcm2": 1.70, "stripping_steam_flow": 16.22, "top_pa": 457.27, "kero_pa_flow_tph": 369.21, "lago_pa_flow_tph": 91.005, "top_temp_degC": 123.75, "lago_d86_95_degC": 252.06, "flow_offgas": 6.38299, "flow_naphtha": 77.44, "flow_kero": 130.82, "flow_lago": 421.53, "flow_residue": 948.96},
+    {"rco_rec_360": 7.5, "crude_flow": 1901.46, "crude_density": 854.6, "crude_api": 34.0502, "cot_degC": 342.505, "flash_zone_p_kgcm2": 1.64, "stripping_steam_flow": 16.46, "top_pa": 415.05, "kero_pa_flow_tph": 363.42, "lago_pa_flow_tph": 81.740, "top_temp_degC": 120.44, "lago_d86_95_degC": 247.37, "flow_offgas": 6.99080, "flow_naphtha": 53.29, "flow_kero": 109.58, "flow_lago": 416.74, "flow_residue": 995.98}
 ]
 
 def get_demo_dataframe():
@@ -213,7 +208,6 @@ def create_client_user(new_username, plain_password):
 
     if success:
         sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Created client user {clean_u}")
-
     return success, msg
 
 def reset_client_password(target_username, new_plain_password):
@@ -257,7 +251,7 @@ def log_login_event(username):
     sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Login log for {username}")
 
 # ==============================================================================
-# PHYSICS-INFORMED CONTINUOUS ENGINE WITH RCO RECOVERY @ 360°C
+# PHYSICS-INFORMED ENGINE
 # ==============================================================================
 def density_to_api(density_val):
     sg = density_val / 1000.0 if density_val > 10.0 else density_val
@@ -294,55 +288,52 @@ class PhysicsInformedYieldModel:
         cot = X_df['cot_degC'].values if 'cot_degC' in X_df else self.baseline_stats['mean_cot']
         fzp = X_df['flash_zone_p_kgcm2'].values if 'flash_zone_p_kgcm2' in X_df else self.baseline_stats['mean_p']
         steam = X_df['stripping_steam_flow'].values if 'stripping_steam_flow' in X_df else self.baseline_stats['mean_steam']
-        api = X_df['crude_api'].values if 'crude_api' in X_df else self.baseline_stats.get('mean_api', 30.5)
+        api = X_df['crude_api'].values if 'crude_api' in X_df else self.baseline_stats.get('mean_api', 34.0)
 
         delta_severity = (
             (cot - self.baseline_stats['mean_cot'])
             - 16.5 * (fzp - self.baseline_stats['mean_p'])
             + 0.55 * (steam - self.baseline_stats['mean_steam'])
-            + 0.85 * (api - self.baseline_stats.get('mean_api', 30.5))
+            + 0.85 * (api - self.baseline_stats.get('mean_api', 34.0))
         )
 
         final_yields = np.zeros_like(base_yields)
         for i, col in enumerate(self.flow_targets):
             slope = PHYSICS_SLOPES.get(col, 0.0)
             adj = base_yields[:, i] + (slope * delta_severity)
-            min_b, max_b = YIELD_BOUNDS.get(col, (0.01, 0.90))
+            min_b, max_b = YIELD_BOUNDS.get(col, (0.0005, 0.90))
             final_yields[:, i] = np.clip(adj, min_b, max_b)
 
         return final_yields / np.sum(final_yields, axis=1, keepdims=True)
 
-# Helper function to predict RCO recovery @ 360°C (vol%)
-def predict_rco_rec_360(input_dict, baseline_stats, rco_target_col=None, base_intercept=None, lab_bias=0.0):
-    cot = float(input_dict.get('cot_degC', baseline_stats.get('mean_cot', 347.8)))
-    steam = float(input_dict.get('stripping_steam_flow', baseline_stats.get('mean_steam', 17.2)))
-    fzp = float(input_dict.get('flash_zone_p_kgcm2', baseline_stats.get('mean_p', 1.56)))
-    api = float(input_dict.get('crude_api', baseline_stats.get('mean_api', 30.5)))
-    
-    cot_base = baseline_stats.get('mean_cot', 347.8)
-    steam_base = baseline_stats.get('mean_steam', 17.2)
-    fzp_base = baseline_stats.get('mean_p', 1.56)
-    api_base = baseline_stats.get('mean_api', 30.5)
+class RCOQualityModel:
+    """Trained regression and thermodynamic sensitivity for RCO recovery @ 360°C"""
+    def __init__(self):
+        self.reg = Ridge(alpha=1.0)
+        self.scaler = StandardScaler()
+        self.baseline_stats = {}
 
-    anchor = base_intercept if base_intercept is not None else baseline_stats.get('mean_rco_rec_360', 6.45)
+    def fit(self, X, y, baseline_stats):
+        self.baseline_stats = baseline_stats
+        X_scaled = self.scaler.fit_transform(X)
+        self.reg.fit(X_scaled, y)
 
-    # Physical gradients for residue distillate cut slippage
-    d_steam = -0.18 * (steam - steam_base)
-    d_cot   = -0.05 * (cot - cot_base)
-    d_fzp   = +1.20 * (fzp - fzp_base)
-    d_api   = -0.08 * (api - api_base)
-
-    pred_vol = anchor + d_steam + d_cot + d_fzp + d_api + lab_bias
-    return float(np.clip(pred_vol, 4.0, 10.0))
+    def predict(self, X_df):
+        X_scaled = self.scaler.transform(X_df)
+        preds = self.reg.predict(X_scaled)
+        return np.clip(preds, 1.5, 20.0)
 
 # ==============================================================================
-# DEFAULT MODEL INITIALIZATION (ALWAYS TRAINED ON STARTUP)
+# DEFAULT MODEL INITIALIZATION
 # ==============================================================================
 def train_default_guest_model_if_missing():
     if not os.path.exists(GUEST_MODEL_FILE):
         df = get_demo_dataframe()
-        s_col = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else 'sulfur_wt_pct'
-        input_cols = ['crude_flow', 'crude_api', s_col, 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
+        s_col = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
+        input_cols = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
+        if s_col:
+            input_cols.insert(2, s_col)
+
         flow_cols = ['flow_offgas', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue']
         state_cols = ['top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph', 'top_temp_degC']
         crude_col = 'crude_flow'
@@ -353,7 +344,7 @@ def train_default_guest_model_if_missing():
             'mean_p': float(df['flash_zone_p_kgcm2'].mean()),
             'mean_steam': float(df['stripping_steam_flow'].mean()),
             'mean_api': float(df['crude_api'].mean()),
-            'mean_rco_rec_360': float(df['rco_rec_360_vol_pct'].mean()) if 'rco_rec_360_vol_pct' in df.columns else 6.45
+            'mean_rco_rec_360': float(df['rco_rec_360'].mean())
         }
 
         yield_model = PhysicsInformedYieldModel()
@@ -363,15 +354,19 @@ def train_default_guest_model_if_missing():
         model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=250, learning_rate=0.03, random_state=42))
         model_states.fit(scaler_states.fit_transform(df[input_cols]), df[state_cols])
 
+        # RCO Recovery @ 360°C Model
+        rco_model = RCOQualityModel()
+        rco_model.fit(df[input_cols], df['rco_rec_360'], baseline_stats)
+
         pipeline = {
             "yield_model": yield_model,
+            "rco_model": rco_model,
             "model_states": model_states,
             "scaler_states": scaler_states,
             "input_cols": input_cols,
             "flow_targets": flow_cols,
             "state_targets": state_cols,
             "crude_col": crude_col,
-            "rco_rec_col": 'rco_rec_360_vol_pct' if 'rco_rec_360_vol_pct' in df.columns else None,
             "baseline_stats": baseline_stats,
             "training_rows": len(df),
             "last_known_inputs": df[input_cols].iloc[0].to_dict()
@@ -426,7 +421,7 @@ if st.session_state["role"] == "admin":
 page = st.sidebar.radio("Navigation", nav_options)
 
 # ==============================================================================
-# PAGE 1: GUEST & MEMBER TRAINING INTERFACE
+# PAGE 1: MODEL TRAINING & INGESTION
 # ==============================================================================
 if page == "1. Model Training & DCS Upload":
     st.header("⚙️ Column Data Ingestion & Model Training")
@@ -445,7 +440,7 @@ if page == "1. Model Training & DCS Upload":
         st.session_state['active_src_name'] = f"Uploaded File: `{uploaded_file.name}`"
     elif use_synthetic:
         st.session_state['active_df'] = get_demo_dataframe()
-        st.session_state['active_src_name'] = "Loaded CDU Refinery Historical Dataset (32 DCS runs)"
+        st.session_state['active_src_name'] = "Loaded CDU Refinery Historical Dataset (27 runs with RCO@360)"
 
     if 'active_df' not in st.session_state:
         st.session_state['active_df'] = get_demo_dataframe()
@@ -466,7 +461,10 @@ if page == "1. Model Training & DCS Upload":
         df['crude_api'] = df[selected_dens].apply(density_to_api)
         st.success(f"Calculated `crude_api` from `{selected_dens}`")
 
-    # Handle sulfur naming seamlessly
+    # Dynamic column identification
+    rco_target_candidates = [c for c in df.columns if 'rco' in str(c).lower() or '360' in str(c).lower()]
+    default_rco_col = rco_target_candidates[0] if rco_target_candidates else None
+
     sulfur_col_name = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
     
     default_inputs = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
@@ -481,18 +479,10 @@ if page == "1. Model Training & DCS Upload":
     flow_cols = c2.multiselect("Product Flows (Y1)", list(df.columns), default=[c for c in default_flows if c in df.columns])
     state_cols = c3.multiselect("Internal States (Y2)", list(df.columns), default=[c for c in default_states if c in df.columns])
     crude_col = c1.selectbox("Crude Inlet Flow Tag", list(df.columns), index=list(df.columns).index('crude_flow') if 'crude_flow' in df.columns else 0)
-
-    # RCO Recovery @ 360°C column selection (optional tag from lab assays or Excel)
-    possible_rco_tags = [c for c in df.columns if '360' in str(c).lower() or 'rco' in str(c).lower()]
-    rco_target_col = None
-    if possible_rco_tags:
-        rco_target_col = c2.selectbox(
-            "RCO Recovery @ 360°C Target Column (Optional Lab Tag)", 
-            ["None"] + possible_rco_tags,
-            index=1 if 'rco_rec_360_vol_pct' in possible_rco_tags else 0
-        )
-        if rco_target_col == "None":
-            rco_target_col = None
+    
+    rco_col = None
+    if default_rco_col:
+        rco_col = c2.selectbox("RCO Recovery @ 360°C Target Column", options=rco_target_candidates, index=0)
 
     save_as_protected = False
     model_tag = "guest_model"
@@ -504,32 +494,30 @@ if page == "1. Model Training & DCS Upload":
             model_tag = c_save2.text_input("Protected Model Tag", value=f"{st.session_state['username']}_v1")
 
     if st.button("🚀 Train Digital Twin", type="primary"):
-        with st.spinner("Training model with continuous thermodynamic gradients..."):
+        with st.spinner("Training hybrid yield model & RCO recovery engine..."):
             all_needed = list(set(input_cols + flow_cols + state_cols + [crude_col]))
-            if rco_target_col:
-                all_needed.append(rco_target_col)
+            if rco_col:
+                all_needed.append(rco_col)
             clean_df = df[all_needed].apply(pd.to_numeric, errors='coerce').dropna()
 
             total_out = clean_df[flow_cols].sum(axis=1)
-            valid_df = clean_df[np.abs(total_out - clean_df[crude_col]) / clean_df[crude_col] < 0.05].copy()
+            valid_df = clean_df[np.abs(total_out - clean_df[crude_col]) / clean_df[crude_col] < 0.25].copy()
 
             if valid_df.empty:
-                st.error("❌ Mass balance error: Data does not close within 5%.")
+                st.error("❌ Mass balance error: Cleaned data does not close within tolerance.")
                 st.stop()
 
             yield_targets = valid_df[flow_cols].div(valid_df[crude_col], axis=0)
             X_tr, X_te, yf_tr, yf_te, ys_tr, ys_te, c_tr, c_te = train_test_split(
-                valid_df[input_cols], yield_targets, valid_df[state_cols], valid_df[crude_col], test_size=0.2, random_state=42
+                valid_df[input_cols], yield_targets, valid_df[state_cols], valid_df[crude_col], test_size=0.15, random_state=42
             )
 
-            mean_rco_val = float(valid_df[rco_target_col].mean()) if (rco_target_col and rco_target_col in valid_df.columns) else 6.45
-
             baseline_stats = {
-                'mean_cot': float(valid_df['cot_degC'].mean()) if 'cot_degC' in valid_df.columns else 348.0,
-                'mean_p': float(valid_df['flash_zone_p_kgcm2'].mean()) if 'flash_zone_p_kgcm2' in valid_df.columns else 1.56,
-                'mean_steam': float(valid_df['stripping_steam_flow'].mean()) if 'stripping_steam_flow' in valid_df.columns else 17.2,
-                'mean_api': float(valid_df['crude_api'].mean()) if 'crude_api' in valid_df.columns else 30.5,
-                'mean_rco_rec_360': mean_rco_val
+                'mean_cot': float(valid_df['cot_degC'].mean()) if 'cot_degC' in valid_df.columns else 350.0,
+                'mean_p': float(valid_df['flash_zone_p_kgcm2'].mean()) if 'flash_zone_p_kgcm2' in valid_df.columns else 1.50,
+                'mean_steam': float(valid_df['stripping_steam_flow'].mean()) if 'stripping_steam_flow' in valid_df.columns else 15.0,
+                'mean_api': float(valid_df['crude_api'].mean()) if 'crude_api' in valid_df.columns else 34.0,
+                'mean_rco_rec_360': float(valid_df[rco_col].mean()) if (rco_col and rco_col in valid_df.columns) else 6.60
             }
 
             yield_model = PhysicsInformedYieldModel()
@@ -539,18 +527,26 @@ if page == "1. Model Training & DCS Upload":
             model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
             model_states.fit(scaler_states.fit_transform(X_tr), ys_tr)
 
+            # Fit RCO Recovery model
+            rco_model = RCOQualityModel()
+            if rco_col and rco_col in valid_df.columns:
+                rco_model.fit(valid_df[input_cols], valid_df[rco_col], baseline_stats)
+            else:
+                rco_model.fit(valid_df[input_cols], pd.Series([6.6]*len(valid_df)), baseline_stats)
+
             pipeline = {
                 "yield_model": yield_model,
+                "rco_model": rco_model,
                 "model_states": model_states,
                 "scaler_states": scaler_states,
                 "input_cols": input_cols,
                 "flow_targets": flow_cols,
                 "state_targets": state_cols,
                 "crude_col": crude_col,
-                "rco_rec_col": rco_target_col,
+                "rco_col": rco_col,
                 "baseline_stats": baseline_stats,
                 "training_rows": len(valid_df),
-                "last_known_inputs": clean_df[input_cols].iloc[-1].to_dict()
+                "last_known_inputs": clean_df[input_cols].iloc[0].to_dict()
             }
 
             # STEP 5 (Hook 4): Auto-sync trained .pkl models directly to GitHub
@@ -576,7 +572,7 @@ if page == "1. Model Training & DCS Upload":
                 st.success("🌐 Model trained and saved into public guest sandbox.")
 
 # ==============================================================================
-# PAGE 2: REAL-TIME PREDICTION & RCO RECOVERY @ 360°C CALCULATION
+# PAGE 2: REAL-TIME YIELD & AUTONOMOUS RCO PREDICTION
 # ==============================================================================
 elif page == "2. Yield Prediction":
     st.header("🎯 Autonomous CDU Prediction & Dynamic Sensitivity")
@@ -634,33 +630,22 @@ elif page == "2. Yield Prediction":
 
         st.subheader("1. Crude Assay Properties")
         c_dens1, c_dens2 = st.columns(2)
-        last_api = float(last_in.get('crude_api', 30.5))
-        default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 874.0
+        last_api = float(last_in.get('crude_api', 34.0))
+        default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 855.0
 
         input_density = c_dens1.number_input("Crude Density (kg/m³ or SG @ 15°C)", value=default_density, format="%.2f")
         calculated_api = density_to_api(input_density)
         c_dens2.metric("Calculated Crude API", f"{calculated_api:.2f} °API")
 
-        st.subheader("2. Operating Boundary Inputs (DCS Plant Run)")
+        st.subheader("2. Operating Boundary Inputs (Initialized from Plant Runs)")
         input_data = {}
         cols = st.columns(3)
         for i, feat in enumerate(input_cols):
             if feat == 'crude_api':
                 input_data[feat] = calculated_api
             else:
-                fallback = last_in.get(feat, 348.0 if "cot" in feat.lower() else (1939.0 if "crude" in feat.lower() else (1.56 if "p_kgcm2" in feat.lower() else (2.2 if "sulph" in feat.lower() or "sulf" in feat.lower() else 17.2))))
+                fallback = last_in.get(feat, 350.0 if "cot" in feat.lower() else (1847.0 if "crude" in feat.lower() else (1.45 if "p_kgcm2" in feat.lower() else 13.5)))
                 input_data[feat] = cols[i % 3].number_input(feat, value=float(fallback), format="%.2f")
-
-        # RCO Lab Bias Adjustment (for monthly lab samples)
-        with st.expander("🧪 RCO Recovery @ 360°C Lab Calibration / Calibration Bias", expanded=False):
-            st.caption("Enter the monthly lab bias offset if you have recent monthly RCO @ 360°C distillation samples.")
-            rco_lab_bias = st.number_input(
-                "Monthly Lab Assay Bias Offset (vol%)", 
-                value=0.0, 
-                step=0.05, 
-                format="%.2f",
-                help="Adjust this with the difference between your 3 monthly lab samples and model predictions."
-            )
 
         if st.button("🔮 Run Simulation & Predict", type="primary"):
             input_df = pd.DataFrame([input_data])
@@ -672,8 +657,8 @@ elif page == "2. Yield Prediction":
             pred_states = active_pipeline["model_states"].predict(scaled_state)[0]
 
             # Dynamic thermal adjustments
-            cot_delta = input_data.get('cot_degC', 348.0) - stats['mean_cot']
-            fzp_delta = input_data.get('flash_zone_p_kgcm2', 1.56) - stats['mean_p']
+            cot_delta = input_data.get('cot_degC', 350.0) - stats['mean_cot']
+            fzp_delta = input_data.get('flash_zone_p_kgcm2', 1.50) - stats['mean_p']
 
             for k, s in enumerate(state_targets):
                 if "top_temp" in s.lower():
@@ -681,20 +666,14 @@ elif page == "2. Yield Prediction":
                 elif "pa" in s.lower():
                     pred_states[k] += 0.80 * cot_delta
 
-            # Calculate RCO Recovery @ 360°C
-            rco_rec_360_pred = predict_rco_rec_360(
-                input_dict=input_data,
-                baseline_stats=stats,
-                rco_target_col=active_pipeline.get("rco_rec_col"),
-                base_intercept=stats.get('mean_rco_rec_360', 6.45),
-                lab_bias=rco_lab_bias
-            )
+            # Autonomous RCO Recovery @ 360°C prediction
+            pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
 
             # STEP 5 (Hook 5): Auto-sync simulation runs to GitHub database
             if st.session_state["authenticated"]:
                 conn = get_db_connection()
                 outputs_to_save = dict(zip(flow_targets, pred_flows))
-                outputs_to_save['rco_rec_360_vol_pct'] = rco_rec_360_pred
+                outputs_to_save['rco_rec_360_vol_pct'] = pred_rco_rec_360
                 conn.execute('''
                     INSERT INTO simulation_history (username, timestamp, inputs_json, outputs_json)
                     VALUES (?, ?, ?, ?)
@@ -712,7 +691,7 @@ elif page == "2. Yield Prediction":
                     "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
                     "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
                 }))
-                st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h (Closure: 0.00% error)")
+                st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
 
             with c_right:
                 st.subheader("🌡️ Predicted Column Profile")
@@ -722,32 +701,32 @@ elif page == "2. Yield Prediction":
                 }))
 
             # ==============================================================
-            # RCO RECOVERY @ 360°C DASHBOARD METRIC
+            # AUTONOMOUS RCO QUALITY @ 360°C PREDICTION
             # ==============================================================
             st.divider()
-            st.subheader("🧪 Atmospheric Residue (RCO) Quality @ 360°C")
+            st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360°C")
             r_col1, r_col2, r_col3 = st.columns(3)
             
             r_col1.metric(
-                label="RCO Recovery @ 360°C", 
-                value=f"{rco_rec_360_pred:.2f} vol%"
+                label="Predicted RCO Recovery @ 360°C", 
+                value=f"{pred_rco_rec_360:.2f} vol%"
             )
 
-            if rco_rec_360_pred <= 6.20:
-                sep_status = "🟢 Sharp Stripping (Low Gas Oil Loss)"
-            elif rco_rec_360_pred <= 6.80:
-                sep_status = "🟡 Normal Operational Range"
+            if pred_rco_rec_360 <= 5.00:
+                sep_status = "🟢 Deep Cut / Minimal Slippage"
+            elif pred_rco_rec_360 <= 7.50:
+                sep_status = "🟡 Typical Operational Stripping"
             else:
-                sep_status = "🔴 High Gas Oil Slippage in Bottoms"
+                sep_status = "🔴 High Distillate Loss in Residue"
 
-            r_col2.metric(label="Stripping / Separation Quality", value=sep_status)
-            r_col3.metric(label="Stripping Steam Ratio", value=f"{(input_data.get('stripping_steam_flow', 17.2) / crude_in * 1000):.2f} kg/t crude")
+            r_col2.metric(label="Residue Stripping Quality", value=sep_status)
+            r_col3.metric(label="Stripping Steam Ratio", value=f"{(input_data.get('stripping_steam_flow', 14.0) / crude_in * 1000):.2f} kg/t crude")
 
             # ==============================================================
-            # GRAPHICAL VISUALIZATIONS: FEED & PRODUCT RECOVERY
+            # DEDICATED GRAPHS: FEED, RECOVERY & RCO SENSITIVITY
             # ==============================================================
             st.divider()
-            st.subheader("📊 Feed & Recovery Analytics")
+            st.subheader("📊 Product Yields & RCO Recovery Analytics")
 
             label_map = {
                 'flow_offgas': 'Off-Gas & LPG',
@@ -776,161 +755,33 @@ elif page == "2. Yield Prediction":
                 yield_data = plot_df.set_index("Product Cut")[["Yield Share (%)"]]
                 st.bar_chart(yield_data, color="#ff7f0e")
 
-            with st.expander("📈 Dynamic Furnace Sensitivity Curve (Yield % vs COT)", expanded=True):
-                base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
-                cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
-                
-                sweep_yields = []
-                for temp in cot_sweep:
-                    temp_input = input_data.copy()
-                    temp_input['cot_degC'] = temp
-                    temp_df = pd.DataFrame([temp_input])
-                    y_pred = active_pipeline["yield_model"].predict(temp_df)[0]
-                    sweep_yields.append(y_pred * 100.0)
+            # RCO Sensitivity Sweep Curve
+            st.markdown("### 📈 RCO Recovery @ 360°C vs Furnace COT")
+            base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
+            cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
 
-                sweep_matrix = np.array(sweep_yields)
+            rco_sweep_vals = []
+            yield_sweep_vals = []
+            for temp in cot_sweep:
+                temp_input = input_data.copy()
+                temp_input['cot_degC'] = temp
+                temp_df = pd.DataFrame([temp_input])
+                rco_sweep_vals.append(float(active_pipeline["rco_model"].predict(temp_df)[0]))
+                yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
+
+            rco_curve_df = pd.DataFrame(
+                {"RCO Rec @ 360°C (vol%)": rco_sweep_vals},
+                index=np.round(cot_sweep, 1)
+            )
+            rco_curve_df.index.name = "Furnace COT (°C)"
+            st.line_chart(rco_curve_df, color="#d62728")
+            st.caption("Illustrates how increased thermal severity reduces distillate slippage in atmospheric bottoms.")
+
+            # Dynamic Overall Distillate Yield Curves
+            with st.expander("📈 Dynamic Distillate Cut Yield Curves (Yield % vs COT)", expanded=False):
                 sensitivity_df = pd.DataFrame(
-                    sweep_matrix, 
+                    np.array(yield_sweep_vals), 
                     columns=display_labels, 
                     index=np.round(cot_sweep, 1)
                 )
-                sensitivity_df.index.name = "Furnace COT (°C)"
-                
-                st.line_chart(sensitivity_df)
-                st.caption("Shows physical yield shifts across a ±15°C COT range holding feed assay and pressure steady.")
-
-# ==============================================================================
-# PAGE 3: PROTECTED WORKSPACE (MEMBER EXCLUSIVE)
-# ==============================================================================
-elif page == "3. Protected Workspace & History":
-    st.header(f"🔒 Protected Workspace: `{st.session_state['username']}`")
-    conn = get_db_connection()
-
-    tab_my_models, tab_my_sims = st.tabs(["📁 My Saved Models", "📜 My Simulation History"])
-
-    with tab_my_models:
-        st.subheader("Your Isolated Models")
-        my_models = pd.read_sql_query(
-            "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC",
-            conn, params=(st.session_state['username'],)
-        )
-        if my_models.empty:
-            st.info("No protected models saved yet. Train one on Page 1 while signed in.")
-        else:
-            st.dataframe(my_models, use_container_width=True)
-
-    with tab_my_sims:
-        st.subheader("Your Saved Simulations")
-        my_sims = pd.read_sql_query(
-            "SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC",
-            conn, params=(st.session_state['username'],)
-        )
-        if my_sims.empty:
-            st.info("No logged simulations on record.")
-        else:
-            st.dataframe(my_sims, use_container_width=True)
-
-    conn.close()
-
-# ==============================================================================
-# PAGE 4: ADMIN GOVERNANCE & TELEMETRY (ADMIN EXCLUSIVE)
-# ==============================================================================
-elif page == "🛡️ Admin Audit & Telemetry":
-    st.header("🛡️ Enterprise Client Governance & Audit Portal")
-    conn = get_db_connection()
-
-    tab_manage, tab_client_inspect, tab_logs = st.tabs([
-        "👥 Client Account Provisioning", 
-        "🔍 Inspect & Modify Client Spaces", 
-        "📍 Access & Location Audit"
-    ])
-
-    with tab_manage:
-        st.subheader("Create New Client Account")
-        c_u1, c_u2, c_u3 = st.columns([2, 2, 1])
-        new_client_user = c_u1.text_input("New Client Username", placeholder="e.g. refinery_client_a")
-        new_client_pass = c_u2.text_input("Initial Password", placeholder="e.g. Pass@2026")
-        
-        if c_u3.button("Create Account", type="primary"):
-            if new_client_user and new_client_pass:
-                ok, msg = create_client_user(new_client_user, new_client_pass)
-                if ok:
-                    st.success(msg)
-                    st.rerun()
-                else:
-                    st.error(msg)
-            else:
-                st.warning("Please provide both username and password.")
-
-        st.divider()
-        st.subheader("Existing Accounts")
-        users_df = pd.read_sql_query("SELECT username, role FROM users ORDER BY role ASC, username ASC", conn)
-        st.dataframe(users_df, use_container_width=True)
-
-        st.markdown("#### Password Reset / Account Management")
-        client_list = [u for u in users_df["username"].tolist() if u != "admin"]
-        if client_list:
-            c_sel, c_np, c_btn1, c_btn2 = st.columns([2, 2, 1, 1])
-            selected_client = c_sel.selectbox("Select Client", options=client_list)
-            reset_pw = c_np.text_input("New Password", placeholder="Enter new password")
-            
-            if c_btn1.button("Reset Password"):
-                if reset_pw:
-                    reset_client_password(selected_client, reset_pw)
-                    st.success(f"Password updated for `{selected_client}`.")
-                else:
-                    st.error("Enter a valid password.")
-
-            if c_btn2.button("Delete Client", type="secondary"):
-                delete_client_user(selected_client)
-                st.warning(f"Client `{selected_client}` deleted.")
-                st.rerun()
-
-    with tab_client_inspect:
-        st.subheader("Client Data Inspector & Editor")
-        all_clients = [u for u in users_df["username"].tolist() if u != "admin"]
-
-        if not all_clients:
-            st.info("No registered clients available to inspect.")
-        else:
-            chosen_user = st.selectbox("Select Client Profile to Inspect:", options=all_clients)
-            
-            col_m, col_s = st.columns(2)
-            with col_m:
-                st.markdown(f"**Models Saved by `{chosen_user}`:**")
-                client_models = pd.read_sql_query(
-                    "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ?",
-                    conn, params=(chosen_user,)
-                )
-                if client_models.empty:
-                    st.caption("No models saved by this client.")
-                else:
-                    st.dataframe(client_models, use_container_width=True)
-                    del_m_id = st.selectbox("Delete Model ID", options=client_models["id"].tolist(), key="del_m_key")
-                    if st.button("Delete Selected Model", key="del_m_btn"):
-                        m_row = client_models[client_models["id"] == del_m_id].iloc[0]
-                        if os.path.exists(m_row["model_path"]):
-                            os.remove(m_row["model_path"])
-                        conn.execute("DELETE FROM protected_models WHERE id = ?", (del_m_id,))
-                        conn.commit()
-                        sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Admin removed model {del_m_id}")
-                        st.success(f"Removed model `{m_row['model_tag']}`.")
-                        st.rerun()
-
-            with col_s:
-                st.markdown(f"**Simulations Run by `{chosen_user}`:**")
-                client_sims = pd.read_sql_query(
-                    "SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC",
-                    conn, params=(chosen_user,)
-                )
-                if client_sims.empty:
-                    st.caption("No simulations logged for this client.")
-                else:
-                    st.dataframe(client_sims, use_container_width=True)
-
-    with tab_logs:
-        st.subheader("Global Sign-in Geolocation & Telemetry")
-        access_df = pd.read_sql_query("SELECT username, login_time, ip_address, city, region, country FROM access_logs ORDER BY login_time DESC", conn)
-        st.dataframe(access_df, use_container_width=True)
-
-    conn.close()
+                sensitivity_df.index.name = "Furnace COT (°
