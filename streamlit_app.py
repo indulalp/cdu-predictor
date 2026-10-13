@@ -333,7 +333,7 @@ def train_default_guest_model_if_missing():
     else:
         try:
             test_pipe = joblib.load(GUEST_MODEL_FILE)
-            if "rco_model" not in test_pipe or test_pipe.get("training_rows", 0) != len(EXCEL_RECORDS):
+            if "rco_model" not in test_pipe or "lago_d86_95_degC" in test_pipe.get("input_cols", []):
                 needs_retrain = True
         except Exception:
             needs_retrain = True
@@ -341,12 +341,16 @@ def train_default_guest_model_if_missing():
     if needs_retrain:
         df = get_demo_dataframe()
         s_col = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
-        input_cols = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
+        
+        # Primary operating DCS inputs only
+        input_cols = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow']
         if s_col:
             input_cols.insert(2, s_col)
 
         flow_cols = ['flow_offgas', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue']
-        state_cols = ['top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph', 'top_temp_degC']
+        
+        # Predicted internal states AND qualities (including LAGO D86 95%)
+        state_cols = ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph']
         crude_col = 'crude_flow'
 
         yield_targets = df[flow_cols].div(df[crude_col], axis=0)
@@ -496,17 +500,20 @@ if page == "1. Model Training & DCS Upload":
 
     sulfur_col_name = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
     
-    default_inputs = [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow', 'lago_d86_95_degC']
+    # Notice: lagoon d86 is intentionally NOT in inputs
+    default_inputs = [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow']
     if sulfur_col_name:
         default_inputs.insert(2, sulfur_col_name)
 
     default_flows = ['flow_offgas', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue']
-    default_states = ['top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph', 'top_temp_degC']
+    
+    # Internal states & product cut qualities to predict
+    default_states = ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph']
 
     c1, c2, c3 = st.columns(3)
     input_cols = c1.multiselect("Inputs (X)", list(df.columns), default=[c for c in default_inputs if c in df.columns])
     flow_cols = c2.multiselect("Product Flows (Y1)", list(df.columns), default=[c for c in default_flows if c in df.columns])
-    state_cols = c3.multiselect("Internal States (Y2)", list(df.columns), default=[c for c in default_states if c in df.columns])
+    state_cols = c3.multiselect("Predicted States & Qualities (Y2)", list(df.columns), default=[c for c in default_states if c in df.columns])
     crude_col = c1.selectbox("Crude Inlet Flow Tag", list(df.columns), index=list(df.columns).index(detected_crude) if detected_crude in list(df.columns) else 0)
     
     rco_col = None
@@ -523,7 +530,7 @@ if page == "1. Model Training & DCS Upload":
             model_tag = c_save2.text_input("Protected Model Tag", value=f"{st.session_state['username']}_v1")
 
     if st.button("🚀 Train Digital Twin", type="primary"):
-        with st.spinner("Training hybrid yield model & RCO recovery engine..."):
+        with st.spinner("Training hybrid yield model & predictive quality twin..."):
             needed_cols = []
             for c in (input_cols + flow_cols + state_cols + [crude_col] + ([rco_col] if rco_col else [])):
                 if c not in needed_cols and c in df.columns:
@@ -611,7 +618,7 @@ if page == "1. Model Training & DCS Upload":
                 st.success("🌐 Model trained and saved into public guest sandbox.")
 
 # ==============================================================================
-# PAGE 2: REAL-TIME YIELD & AUTONOMOUS RCO PREDICTION
+# PAGE 2: REAL-TIME YIELD & AUTONOMOUS QUALITY PREDICTION
 # ==============================================================================
 elif page == "2. Yield Prediction":
     st.header("🎯 Autonomous CDU Prediction & Dynamic Sensitivity")
@@ -688,13 +695,14 @@ elif page == "2. Yield Prediction":
         default_crude_flow = float(last_in.get(crude_tag, 1847.17))
         crude_in_val = c_dens3.number_input(f"Crude Inlet Flow Rate ({crude_tag}) [t/h]", value=default_crude_flow, format="%.2f")
 
-        # Compact Section 2: Operating Boundary Inputs & Inline Action Button
-        st.markdown("#### 2. Operating Boundary Inputs (Initialized from Plant Runs)")
+        # Compact Section 2: Operating Boundary Inputs (DCS parameters only) & Inline Action Button
+        st.markdown("#### 2. Operating Boundary Inputs (Pure DCS Parameters)")
         input_data = {
             crude_tag: crude_in_val,
             'crude_api': calculated_api
         }
 
+        # Filter out crude flow and crude API to generate clean operating tags
         boundary_features = [f for f in input_cols if f != crude_tag and f != 'crude_api']
         num_features = len(boundary_features)
         
@@ -703,11 +711,11 @@ elif page == "2. Yield Prediction":
         op_cols = st.columns(col_ratios)
 
         for i, feat in enumerate(boundary_features):
-            fallback = last_in.get(feat, 350.12 if "cot" in feat.lower() else (1.43 if "p_kgcm2" in feat.lower() else (13.20 if "steam" in feat.lower() else 243.27)))
+            fallback = last_in.get(feat, 350.12 if "cot" in feat.lower() else (1.43 if "p_kgcm2" in feat.lower() else (13.20 if "steam" in feat.lower() else 2.20)))
             input_data[feat] = op_cols[i].number_input(feat, value=float(fallback), format="%.2f")
 
         with op_cols[-1]:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)  # Vertical alignment shim
+            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
             run_sim = st.button("🔮 Run Simulation & Predict", type="primary", use_container_width=True)
 
         if run_sim:
@@ -729,7 +737,7 @@ elif page == "2. Yield Prediction":
                 elif "pa" in s.lower():
                     pred_states[k] += 0.80 * cot_delta
 
-            # Safe RCO Recovery @ 360 deg C prediction (handles both new and legacy models)
+            # Safe RCO Recovery @ 360 deg C prediction
             if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
                 pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
             else:
@@ -751,6 +759,8 @@ elif page == "2. Yield Prediction":
                 conn = get_db_connection()
                 outputs_to_save = dict(zip(flow_targets, pred_flows))
                 outputs_to_save['rco_rec_360_vol_pct'] = pred_rco_rec_360
+                # Also log predicted states and LAGO D86
+                outputs_to_save.update(dict(zip(state_targets, pred_states)))
                 conn.execute('''
                     INSERT INTO simulation_history (username, timestamp, inputs_json, outputs_json)
                     VALUES (?, ?, ?, ?)
@@ -840,7 +850,7 @@ elif page == "2. Yield Prediction":
             st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
 
             # ==============================================================
-            # PRODUCT YIELDS & COLUMN PROFILES
+            # PRODUCT YIELDS & PREDICTED COLUMN PROFILES / CUT QUALITIES
             # ==============================================================
             st.divider()
             c_left, c_right = st.columns(2)
@@ -854,10 +864,22 @@ elif page == "2. Yield Prediction":
                 st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
 
             with c_right:
-                st.subheader("🌡️ Predicted Column Profile")
+                st.subheader("🌡️ Predicted States & Product Cut Qualities")
+                
+                formatted_states = []
+                for n, v in zip(state_targets, pred_states):
+                    if "d86" in n.lower():
+                        formatted_states.append(f"{v:.2f} °C (ASTM D86 95%)")
+                    elif "temp" in n.lower():
+                        formatted_states.append(f"{v:.2f} °C")
+                    elif "pa" in n.lower():
+                        formatted_states.append(f"{v:.2f} t/h")
+                    else:
+                        formatted_states.append(f"{v:.2f}")
+
                 st.table(pd.DataFrame({
-                    "Parameter": state_targets,
-                    "Predicted Value": [f"{v:.2f} {'deg C' if 'temp' in n.lower() else 't/h'}" for n, v in zip(state_targets, pred_states)]
+                    "Parameter / Cut Quality": state_targets,
+                    "Predicted Value": formatted_states
                 }))
 
             # ==============================================================
