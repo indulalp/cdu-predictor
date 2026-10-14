@@ -78,11 +78,11 @@ def get_demo_dataframe():
     return pd.DataFrame(EXCEL_RECORDS)
 
 # ==============================================================================
-# STEP 4: GITHUB AUTO-COMMIT SYNCHRONIZATION ENGINE
+# GITHUB CONTINUOUS SYNC & CONTAINER REHYDRATION (ZERO-DATA-LOSS HOOKS)
 # ==============================================================================
 def sync_file_to_github(local_file_path, repo_file_path, commit_message="Auto-sync from Streamlit App"):
     if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
-        return False
+        return False, "GITHUB_TOKEN or GITHUB_REPO not defined in Streamlit secrets."
 
     token = st.secrets["GITHUB_TOKEN"]
     repo_name = st.secrets["GITHUB_REPO"]
@@ -115,10 +115,46 @@ def sync_file_to_github(local_file_path, repo_file_path, commit_message="Auto-sy
             else:
                 raise e
 
-        return True
+        return True, "Synced"
     except Exception as err:
-        st.sidebar.warning(f"⚠️ GitHub Sync Alert: {err}")
-        return False
+        return False, str(err)
+
+def rehydrate_from_github():
+    """Restores database and all model artifacts from GitHub repository upon container spin-up."""
+    if "GITHUB_TOKEN" not in st.secrets or "GITHUB_REPO" not in st.secrets:
+        return
+    token = st.secrets["GITHUB_TOKEN"]
+    repo_name = st.secrets["GITHUB_REPO"]
+    
+    try:
+        g = Github(token)
+        repo = g.get_repo(repo_name)
+        branch = st.secrets.get("GITHUB_BRANCH", repo.default_branch)
+
+        # 1. Pull latest audit telemetry DB
+        try:
+            db_content = repo.get_contents(DB_PATH, ref=branch)
+            with open(DB_PATH, "wb") as f:
+                f.write(db_content.decoded_content)
+        except Exception:
+            pass
+
+        # 2. Pull all trained models from models/ directory
+        try:
+            models_folder = repo.get_contents("models", ref=branch)
+            for file_item in models_folder:
+                if file_item.name.endswith(".pkl") and not os.path.exists(file_item.path):
+                    with open(file_item.path, "wb") as f:
+                        f.write(file_item.decoded_content)
+        except Exception:
+            pass
+    except Exception as e:
+        print(f"Rehydration note: {e}")
+
+# Perform container rehydration once per session
+if "rehydrated" not in st.session_state:
+    rehydrate_from_github()
+    st.session_state["rehydrated"] = True
 
 # ==============================================================================
 # DATABASE & ACCESS CONTROL LAYER
@@ -342,14 +378,11 @@ def train_default_guest_model_if_missing():
         df = get_demo_dataframe()
         s_col = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
         
-        # Primary operating DCS inputs only
         input_cols = ['crude_flow', 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow']
         if s_col:
             input_cols.insert(2, s_col)
 
         flow_cols = ['flow_offgas', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue']
-        
-        # Predicted internal states AND qualities (including LAGO D86 95%)
         state_cols = ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph']
         crude_col = 'crude_flow'
 
@@ -369,7 +402,6 @@ def train_default_guest_model_if_missing():
         model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=250, learning_rate=0.03, random_state=42))
         model_states.fit(scaler_states.fit_transform(df[input_cols]), df[state_cols])
 
-        # RCO Recovery @ 360 deg C Model
         rco_model = RCOQualityModel()
         rco_model.fit(df[input_cols], df['rco_rec_360'], baseline_stats)
 
@@ -387,6 +419,7 @@ def train_default_guest_model_if_missing():
             "last_known_inputs": df[input_cols].iloc[0].to_dict()
         }
         joblib.dump(pipeline, GUEST_MODEL_FILE)
+        sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Baseline default guest model")
 
 train_default_guest_model_if_missing()
 
@@ -450,12 +483,10 @@ if page == "1. Model Training & DCS Upload":
     if uploaded_file is not None:
         raw_df = pd.read_csv(uploaded_file) if uploaded_file.name.endswith(".csv") else pd.read_excel(uploaded_file)
         
-        # Promote header row if unnamed columns are detected
         if any("unnamed" in str(col).lower() for col in raw_df.columns):
             raw_df.columns = raw_df.iloc[0].astype(str)
             raw_df = raw_df[1:].reset_index(drop=True)
             
-        # Clean column names, remove duplicate headers, and reset index
         raw_df.columns = [str(c).strip() for c in raw_df.columns]
         raw_df = raw_df.loc[:, ~raw_df.columns.duplicated()].copy()
         raw_df = raw_df.reset_index(drop=True)
@@ -485,7 +516,6 @@ if page == "1. Model Training & DCS Upload":
         df['crude_api'] = df[selected_dens].apply(density_to_api)
         st.success(f"Calculated `crude_api` from `{selected_dens}`")
 
-    # Auto-detect crude flow alias (handles 'flow rate', 'crude_flow', etc.)
     detected_crude = None
     for cand in ['crude_flow', 'flow rate', 'feed_flow', 'crude_rate']:
         if cand in df.columns:
@@ -494,20 +524,16 @@ if page == "1. Model Training & DCS Upload":
     if not detected_crude:
         detected_crude = df.columns[0]
 
-    # Dynamic column identification
     rco_target_candidates = [c for c in df.columns if 'rco' in str(c).lower() or '360' in str(c).lower()]
     default_rco_col = rco_target_candidates[0] if rco_target_candidates else None
 
     sulfur_col_name = 'sulphur_wt_pct' if 'sulphur_wt_pct' in df.columns else ('sulfur_wt_pct' if 'sulfur_wt_pct' in df.columns else None)
     
-    # Notice: lagoon d86 is intentionally NOT in inputs
     default_inputs = [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow']
     if sulfur_col_name:
         default_inputs.insert(2, sulfur_col_name)
 
     default_flows = ['flow_offgas', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue']
-    
-    # Internal states & product cut qualities to predict
     default_states = ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph']
 
     c1, c2, c3 = st.columns(3)
@@ -573,7 +599,6 @@ if page == "1. Model Training & DCS Upload":
             model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
             model_states.fit(scaler_states.fit_transform(X_tr), ys_tr)
 
-            # Fit RCO Recovery model
             rco_model = RCOQualityModel()
             if rco_col and rco_col in valid_df.columns:
                 rco_model.fit(valid_df[input_cols], valid_df[rco_col], baseline_stats)
@@ -595,7 +620,6 @@ if page == "1. Model Training & DCS Upload":
                 "last_known_inputs": clean_df[input_cols].iloc[0].to_dict()
             }
 
-            # STEP 5 (Hook 4): Auto-sync trained .pkl models directly to GitHub
             if save_as_protected and st.session_state["authenticated"]:
                 timestamp_str = datetime.now().strftime("%Y%m%d_%H%M%S")
                 save_path = f"models/protected_{st.session_state['username']}_{timestamp_str}.pkl"
@@ -609,13 +633,21 @@ if page == "1. Model Training & DCS Upload":
                 conn.commit()
                 conn.close()
 
-                sync_file_to_github(save_path, save_path, f"Auto-sync: New protected model {model_tag}")
-                sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Registered protected model {model_tag}")
-                st.success(f"🔒 Model saved to your vault and pushed to GitHub as `{model_tag}`!")
+                # Push to GitHub
+                ok1, err1 = sync_file_to_github(save_path, save_path, f"Auto-sync: New protected model {model_tag}")
+                ok2, err2 = sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Registered protected model {model_tag}")
+                
+                if ok1 and ok2:
+                    st.success(f"🔒 Model saved to your vault and pushed to GitHub as `{model_tag}`! It is now the active model.")
+                else:
+                    st.warning(f"⚠️ Model saved locally, but GitHub cloud push failed: {err1}. Ensure your GITHUB_TOKEN has write permissions.")
             else:
                 joblib.dump(pipeline, GUEST_MODEL_FILE)
-                sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Updated guest model")
-                st.success("🌐 Model trained and saved into public guest sandbox.")
+                ok, err = sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Updated guest model")
+                if ok:
+                    st.success("🌐 Model trained and saved as the active public guest model on GitHub.")
+                else:
+                    st.warning(f"⚠️ Saved locally. GitHub push notice: {err}")
 
 # ==============================================================================
 # PAGE 2: REAL-TIME YIELD & AUTONOMOUS QUALITY PREDICTION
@@ -626,14 +658,12 @@ elif page == "2. Yield Prediction":
     active_pipeline = None
     if st.session_state["authenticated"]:
         conn = get_db_connection()
-        # Order by id DESC so the LAST ADDED model is first in the list
         user_models_df = pd.read_sql_query(
             "SELECT id, model_tag, model_path FROM protected_models WHERE username = ? ORDER BY id DESC",
             conn, params=(st.session_state["username"],)
         )
         conn.close()
 
-        # Ultra-compact single-row model selector
         m_sel_col1, m_sel_col2 = st.columns([1.5, 2.5])
         with m_sel_col1:
             source_choice = st.radio(
@@ -650,21 +680,30 @@ elif page == "2. Yield Prediction":
             else:
                 tag_to_path = dict(zip(user_models_df["model_tag"], user_models_df["model_path"]))
                 with m_sel_col2:
+                    # Index 0 is always the latest model because of ORDER BY id DESC
                     selected_tag = st.selectbox("Select Your Private Model:", options=list(tag_to_path.keys()), index=0)
                 chosen_path = tag_to_path[selected_tag]
                 
+                # Auto-pull from GitHub if cold container lacks this file
+                if chosen_path and not os.path.exists(chosen_path):
+                    rehydrate_from_github()
+
                 if chosen_path and os.path.exists(chosen_path):
                     active_pipeline = joblib.load(chosen_path)
                 else:
-                    st.error("❌ Selected model artifact is missing from disk.")
+                    st.error("❌ Selected model artifact is missing from disk and GitHub repository.")
                     st.stop()
         else:
+            if not os.path.exists(GUEST_MODEL_FILE):
+                rehydrate_from_github()
             if os.path.exists(GUEST_MODEL_FILE):
                 active_pipeline = joblib.load(GUEST_MODEL_FILE)
             else:
                 st.warning("⚠️ Public guest model not found. Please train it on Page 1.")
                 st.stop()
     else:
+        if not os.path.exists(GUEST_MODEL_FILE):
+            rehydrate_from_github()
         if os.path.exists(GUEST_MODEL_FILE):
             active_pipeline = joblib.load(GUEST_MODEL_FILE)
         else:
@@ -681,249 +720,353 @@ elif page == "2. Yield Prediction":
         stats = active_pipeline["baseline_stats"]
         crude_tag = active_pipeline.get("crude_col", "crude_flow")
 
-        # Compact Section 1: Crude Assay Properties & Inlet Throughput
-        st.markdown("#### 1. Crude Assay Properties & Inlet Throughput")
-        c_dens1, c_dens2, c_dens3 = st.columns([1.5, 1.2, 2.0])
-        last_api = float(last_in.get('crude_api', 34.0))
-        default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 852.87
+        pred_mode = st.radio(
+            "Prediction Mode:", 
+            ["🎯 Single Instant Run", "📂 Batch Upload (Excel / CSV)"], 
+            horizontal=True
+        )
 
-        input_density = c_dens1.number_input("Crude Density (kg/m³ @ 15°C)", value=default_density, format="%.2f")
-        calculated_api = density_to_api(input_density)
-        c_dens2.metric("Calculated API", f"{calculated_api:.2f} °API")
+        # ==============================================================
+        # OPTION A: BATCH EXCEL / CSV EVALUATION
+        # ==============================================================
+        if pred_mode == "📂 Batch Upload (Excel / CSV)":
+            st.markdown("#### 📂 Upload Plant Dataset for Batch RCO & Yield Prediction")
+            st.caption("Upload an Excel or CSV file with process runs. The digital twin will predict RCO @ 360°C, cut yields, and internal column states across all rows.")
 
-        # Explicit Crude Inlet Flow Rate Input (Guarantees flow is always present)
-        default_crude_flow = float(last_in.get(crude_tag, 1847.17))
-        crude_in_val = c_dens3.number_input(f"Crude Inlet Flow Rate ({crude_tag}) [t/h]", value=default_crude_flow, format="%.2f")
+            batch_file = st.file_uploader("Upload Plant Process Run Sheet", type=["csv", "xlsx"], key="batch_pred_uploader")
 
-        # Compact Section 2: Operating Boundary Inputs (DCS parameters only) & Inline Action Button
-        st.markdown("#### 2. Operating Boundary Inputs (DCS Parameters)")
-        input_data = {
-            crude_tag: crude_in_val,
-            'crude_api': calculated_api
-        }
-
-        # Filter out crude flow and crude API to generate clean operating tags
-        boundary_features = [f for f in input_cols if f != crude_tag and f != 'crude_api']
-        num_features = len(boundary_features)
-        
-        # Allocate columns: 1 for each operating parameter + 1 for the inline Run button
-        col_ratios = [1.0] * num_features + [1.2]
-        op_cols = st.columns(col_ratios)
-
-        for i, feat in enumerate(boundary_features):
-            fallback = last_in.get(feat, 350.12 if "cot" in feat.lower() else (1.43 if "p_kgcm2" in feat.lower() else (13.20 if "steam" in feat.lower() else 2.20)))
-            input_data[feat] = op_cols[i].number_input(feat, value=float(fallback), format="%.2f")
-
-        with op_cols[-1]:
-            st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-            run_sim = st.button("🔮 Run Simulation & Predict", type="primary", use_container_width=True)
-
-        if run_sim:
-            input_df = pd.DataFrame([input_data])
-            norm_yields = active_pipeline["yield_model"].predict(input_df)[0]
-            crude_in = input_data.get(crude_tag, crude_in_val)
-            pred_flows = norm_yields * crude_in
-
-            scaled_state = active_pipeline["scaler_states"].transform(input_df)
-            pred_states = active_pipeline["model_states"].predict(scaled_state)[0]
-
-            # Dynamic thermal adjustments
-            cot_delta = input_data.get('cot_degC', 350.0) - stats['mean_cot']
-            fzp_delta = input_data.get('flash_zone_p_kgcm2', 1.50) - stats['mean_p']
-
-            for k, s in enumerate(state_targets):
-                if "top_temp" in s.lower():
-                    pred_states[k] += 0.15 * cot_delta - 2.5 * fzp_delta
-                elif "pa" in s.lower():
-                    pred_states[k] += 0.80 * cot_delta
-
-            # Safe RCO Recovery @ 360 deg C prediction
-            if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
-                pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
-            else:
-                cot_curr = float(input_data.get('cot_degC', stats.get('mean_cot', 350.0)))
-                steam_curr = float(input_data.get('stripping_steam_flow', stats.get('mean_steam', 15.0)))
-                fzp_curr = float(input_data.get('flash_zone_p_kgcm2', stats.get('mean_p', 1.50)))
-                api_curr = float(calculated_api)
-                base_val = stats.get('mean_rco_rec_360', 6.60)
-                pred_rco_rec_360 = float(np.clip(
-                    base_val - 0.05 * (cot_curr - stats.get('mean_cot', 350.0))
-                             - 0.18 * (steam_curr - stats.get('mean_steam', 15.0))
-                             + 1.20 * (fzp_curr - stats.get('mean_p', 1.50))
-                             - 0.08 * (api_curr - stats.get('mean_api', 34.0)),
-                    1.5, 20.0
-                ))
-
-            # STEP 5 (Hook 5): Auto-sync simulation runs to GitHub database
-            if st.session_state["authenticated"]:
-                conn = get_db_connection()
-                outputs_to_save = dict(zip(flow_targets, pred_flows))
-                outputs_to_save['rco_rec_360_vol_pct'] = pred_rco_rec_360
-                # Also log predicted states and LAGO D86
-                outputs_to_save.update(dict(zip(state_targets, pred_states)))
-                conn.execute('''
-                    INSERT INTO simulation_history (username, timestamp, inputs_json, outputs_json)
-                    VALUES (?, ?, ?, ?)
-                ''', (st.session_state["username"], datetime.now(), json.dumps(input_data), json.dumps(outputs_to_save)))
-                conn.commit()
-                conn.close()
-                sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Logged run for {st.session_state['username']}")
-
-            # ==============================================================
-            # PRIORITY 1: AUTONOMOUS RCO RECOVERY @ 360°C & STRIPPING DIAGNOSTICS
-            # ==============================================================
-            st.divider()
-            st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360°C & Stripping Diagnostics")
-            
-            r_col1, r_col2, r_col3 = st.columns([1.2, 1.8, 1.2])
-            r_col1.metric("Predicted RCO Rec @ 360°C", f"{pred_rco_rec_360:.2f} vol%")
-
-            # Operational Classification & Optimization Strategy Engine
-            cot_current = float(input_data.get('cot_degC', 350.12))
-            steam_current = float(input_data.get('stripping_steam_flow', 13.20))
-            fzp_current = float(input_data.get('flash_zone_p_kgcm2', 1.43))
-
-            suggestions = []
-            if pred_rco_rec_360 <= 5.00:
-                sep_status = "🟢 Deep Cut / Minimal Slippage"
-                status_color = "success"
-                suggestions.append("• **Stripping Severity is Optimal:** Residue contains minimal gas oil tail.")
-                suggestions.append(f"• **Energy Conservation:** Stripping steam is currently `{steam_current:.2f} t/h`. You may safely trim steam by `0.5 - 1.0 t/h` to reduce boiler load without exceeding the 6.5 vol% slippage limit.")
-            elif pred_rco_rec_360 <= 7.50:
-                sep_status = "🟡 Typical Operational Stripping"
-                status_color = "info"
-                suggested_steam = min(steam_current + 1.2, 18.0)
-                suggested_cot = cot_current + 2.5
-                suggestions.append(f"• **Moderate Gas Oil Loss:** Slippage is within standard limits but valuable distillate is downgrading to residue.")
-                suggestions.append(f"• **Recommended Action 1 (Steam):** Increase Stripping Steam from `{steam_current:.2f} t/h` ➔ **`{suggested_steam:.2f} t/h`** (~{suggested_steam/crude_in*1000:.1f} kg/t crude) to strip ~0.3 vol% more gas oil.")
-                suggestions.append(f"• **Recommended Action 2 (Furnace):** Advance Coil Outlet Temp (COT) from `{cot_current:.2f}°C` ➔ **`{suggested_cot:.2f}°C`** if within furnace tube metallurgy limits.")
-            else:
-                sep_status = "🔴 High Distillate Loss in Residue"
-                status_color = "warning"
-                target_steam = max(steam_current + 2.5, 16.5)
-                target_cot = min(cot_current + 4.0, 360.0)
-                suggestions.append("• **Critical Stripping Inefficiency:** Heavy gas oils are sliding directly into the low-value residue pool.")
-                suggestions.append(f"• **Action Required 1:** Boost Stripping Steam from `{steam_current:.2f} t/h` ➔ **`{target_steam:.2f} t/h`** immediately.")
-                suggestions.append(f"• **Action Required 2:** Raise Furnace COT from `{cot_current:.2f}°C` ➔ **`{target_cot:.2f}°C`** to shift flash equilibrium.")
-                if fzp_current > 1.50:
-                    suggestions.append(f"• **Action Required 3:** Column Flash Zone Pressure is elevated (`{fzp_current:.2f} kg/cm²`). Reduce top reflux/condenser pressure drop toward `1.42 kg/cm²` to facilitate vaporization.")
-
-            r_col2.metric("Stripping / Separation Quality", sep_status)
-            steam_ratio = (steam_current / crude_in) * 1000.0
-            r_col3.metric("Stripping Steam Ratio", f"{steam_ratio:.2f} kg/t crude")
-
-            # Parameter Optimization Advisory Box
-            with st.container():
-                if status_color == "success":
-                    st.success("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
-                elif status_color == "info":
-                    st.info("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
-                else:
-                    st.warning("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
-
-            # PRIORITY 2: Standalone RCO Recovery @ 360°C Sensitivity Curve
-            st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT (Thermodynamic Sensitivity)")
-            base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
-            cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
-
-            rco_sweep_vals = []
-            yield_sweep_vals = []
-            for temp in cot_sweep:
-                temp_input = input_data.copy()
-                temp_input['cot_degC'] = temp
-                temp_df = pd.DataFrame([temp_input])
+            if batch_file is not None:
+                b_df = pd.read_csv(batch_file) if batch_file.name.endswith(".csv") else pd.read_excel(batch_file)
                 
-                if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
-                    rco_val = float(active_pipeline["rco_model"].predict(temp_df)[0])
-                else:
-                    rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
-                
-                rco_sweep_vals.append(rco_val)
-                yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
+                if any("unnamed" in str(col).lower() for col in b_df.columns):
+                    b_df.columns = b_df.iloc[0].astype(str)
+                    b_df = b_df[1:].reset_index(drop=True)
 
-            rco_curve_df = pd.DataFrame(
-                {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
-                index=np.round(cot_sweep, 1)
-            )
-            rco_curve_df.index.name = "Furnace COT (deg C)"
-            st.line_chart(rco_curve_df, color="#d62728")
-            st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
+                b_df.columns = [str(c).strip() for c in b_df.columns]
+                b_df = b_df.loc[:, ~b_df.columns.duplicated()].copy().reset_index(drop=True)
 
-            # ==============================================================
-            # PRODUCT YIELDS & PREDICTED COLUMN PROFILES / CUT QUALITIES
-            # ==============================================================
-            st.divider()
-            c_left, c_right = st.columns(2)
-            with c_left:
-                st.subheader("📦 Product Recovery Yields")
-                st.table(pd.DataFrame({
-                    "Cut Stream": flow_targets,
-                    "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
-                    "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
-                }))
-                st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
+                st.write(f"Loaded **{len(b_df)} rows** from `{batch_file.name}`")
+                with st.expander("Preview Uploaded Input Sheet", expanded=False):
+                    st.dataframe(b_df.head(5), use_container_width=True)
 
-            with c_right:
-                st.subheader("🌡️ Predicted States & Product Cut Qualities")
-                
-                formatted_states = []
-                for n, v in zip(state_targets, pred_states):
-                    if "d86" in n.lower():
-                        formatted_states.append(f"{v:.2f} °C (ASTM D86 95%)")
-                    elif "temp" in n.lower():
-                        formatted_states.append(f"{v:.2f} °C")
-                    elif "pa" in n.lower():
-                        formatted_states.append(f"{v:.2f} t/h")
+                if 'crude_api' not in b_df.columns:
+                    dens_cand = [c for c in b_df.columns if 'dens' in c.lower() or 'sg' in c.lower()]
+                    if dens_cand:
+                        b_df['crude_api'] = pd.to_numeric(b_df[dens_cand[0]], errors='coerce').apply(density_to_api)
+
+                active_crude_col = crude_tag if crude_tag in b_df.columns else None
+                if not active_crude_col:
+                    flow_cand = [c for c in b_df.columns if 'flow' in c.lower() or 'rate' in c.lower()]
+                    if flow_cand:
+                        active_crude_col = flow_cand[0]
                     else:
-                        formatted_states.append(f"{v:.2f}")
+                        active_crude_col = b_df.columns[0]
 
-                st.table(pd.DataFrame({
-                    "Parameter / Cut Quality": state_targets,
-                    "Predicted Value": formatted_states
-                }))
+                missing_feats = [f for f in input_cols if f not in b_df.columns and f != active_crude_col]
+                if missing_feats:
+                    st.warning(f"⚠️ Missing columns detected: `{missing_feats}`. The model will initialize them using baseline plant averages.")
+                    for mf in missing_feats:
+                        b_df[mf] = stats.get(f'mean_{mf}', 0.0)
 
-            # ==============================================================
-            # MASS & FRACTION BAR CHARTS + ALWAYS-VISIBLE YIELD CURVES
-            # ==============================================================
-            st.divider()
-            st.subheader("📊 Product Yield Analytics & Dynamic Curves")
+                if st.button("🚀 Run Batch Prediction", type="primary"):
+                    with st.spinner(f"Computing predictions for {len(b_df)} rows..."):
+                        eval_df = b_df.copy()
+                        for c in input_cols:
+                            if c not in eval_df.columns and c == crude_tag:
+                                eval_df[c] = pd.to_numeric(b_df[active_crude_col], errors='coerce')
+                            else:
+                                eval_df[c] = pd.to_numeric(eval_df[c], errors='coerce').fillna(stats.get(f'mean_{c}', 0.0))
 
-            label_map = {
-                'flow_offgas': 'Off-Gas & LPG',
-                'flow_naphtha': 'Naphtha',
-                'flow_kero': 'Kerosene',
-                'flow_lago': 'LAGO',
-                'flow_residue': 'Atm. Residue'
+                        if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
+                            rco_preds = active_pipeline["rco_model"].predict(eval_df[input_cols])
+                        else:
+                            cot_vals = eval_df['cot_degC'].values if 'cot_degC' in eval_df else np.full(len(eval_df), stats.get('mean_cot', 350.0))
+                            steam_vals = eval_df['stripping_steam_flow'].values if 'stripping_steam_flow' in eval_df else np.full(len(eval_df), stats.get('mean_steam', 15.0))
+                            fzp_vals = eval_df['flash_zone_p_kgcm2'].values if 'flash_zone_p_kgcm2' in eval_df else np.full(len(eval_df), stats.get('mean_p', 1.50))
+                            api_vals = eval_df['crude_api'].values if 'crude_api' in eval_df else np.full(len(eval_df), stats.get('mean_api', 34.0))
+                            base_val = stats.get('mean_rco_rec_360', 6.60)
+                            rco_preds = np.clip(
+                                base_val - 0.05 * (cot_vals - stats.get('mean_cot', 350.0))
+                                         - 0.18 * (steam_vals - stats.get('mean_steam', 15.0))
+                                         + 1.20 * (fzp_vals - stats.get('mean_p', 1.50))
+                                         - 0.08 * (api_vals - stats.get('mean_api', 34.0)),
+                                1.5, 20.0
+                            )
+
+                        norm_yields = active_pipeline["yield_model"].predict(eval_df[input_cols])
+                        crude_rates = eval_df[active_crude_col if active_crude_col in eval_df else crude_tag].values
+
+                        scaled_state = active_pipeline["scaler_states"].transform(eval_df[input_cols])
+                        pred_states = active_pipeline["model_states"].predict(scaled_state)
+
+                        b_df["Predicted_RCO_Rec_360_vol_pct"] = np.round(rco_preds, 2)
+
+                        label_map = {
+                            'flow_offgas': 'Pred_OffGas_tph',
+                            'flow_naphtha': 'Pred_Naphtha_tph',
+                            'flow_kero': 'Pred_Kero_tph',
+                            'flow_lago': 'Pred_LAGO_tph',
+                            'flow_residue': 'Pred_Residue_tph'
+                        }
+                        for idx, target in enumerate(flow_targets):
+                            col_name = label_map.get(target, f"Pred_{target}")
+                            b_df[col_name] = np.round(norm_yields[:, idx] * crude_rates, 2)
+
+                        for s_idx, state_tag in enumerate(state_targets):
+                            b_df[f"Pred_{state_tag}"] = np.round(pred_states[:, s_idx], 2)
+
+                        st.success(f"✅ Successfully processed {len(b_df)} rows!")
+
+                        m1, m2, m3 = st.columns(3)
+                        m1.metric("Average Predicted RCO @ 360°C", f"{np.mean(rco_preds):.2f} vol%")
+                        m2.metric("Min RCO @ 360°C", f"{np.min(rco_preds):.2f} vol%")
+                        m3.metric("Max RCO @ 360°C", f"{np.max(rco_preds):.2f} vol%")
+
+                        st.markdown("#### 📈 Predicted RCO Recovery @ 360°C Across Runs")
+                        chart_df = pd.DataFrame({
+                            "Run Index": np.arange(1, len(b_df) + 1),
+                            "RCO @ 360°C (vol%)": b_df["Predicted_RCO_Rec_360_vol_pct"]
+                        }).set_index("Run Index")
+                        st.line_chart(chart_df, color="#d62728")
+
+                        st.subheader("📋 Output Data Table with Predictions")
+                        st.dataframe(b_df, use_container_width=True)
+
+                        csv_data = b_df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            label="📥 Download Predicted Results as CSV",
+                            data=csv_data,
+                            file_name=f"cdu_predicted_rco_{datetime.now().strftime('%Y%m%d_%H%M%S')}.csv",
+                            mime="text/csv"
+                        )
+
+        # ==============================================================
+        # OPTION B: SINGLE INSTANT RUN INTERFACE
+        # ==============================================================
+        else:
+            st.markdown("#### 1. Crude Assay Properties & Inlet Throughput")
+            c_dens1, c_dens2, c_dens3 = st.columns([1.5, 1.2, 2.0])
+            last_api = float(last_in.get('crude_api', 34.0))
+            default_density = float(141.5 / (last_api + 131.5) * 1000.0) if last_api else 852.87
+
+            input_density = c_dens1.number_input("Crude Density (kg/m³ @ 15°C)", value=default_density, format="%.2f")
+            calculated_api = density_to_api(input_density)
+            c_dens2.metric("Calculated API", f"{calculated_api:.2f} °API")
+
+            default_crude_flow = float(last_in.get(crude_tag, 1847.17))
+            crude_in_val = c_dens3.number_input(f"Crude Inlet Flow Rate ({crude_tag}) [t/h]", value=default_crude_flow, format="%.2f")
+
+            st.markdown("#### 2. Operating Boundary Inputs (Pure DCS Parameters)")
+            input_data = {
+                crude_tag: crude_in_val,
+                'crude_api': calculated_api
             }
-            display_labels = [label_map.get(col, col) for col in flow_targets]
 
-            plot_df = pd.DataFrame({
-                "Product Cut": display_labels,
-                "Mass Flow (t/h)": pred_flows,
-                "Yield Share (%)": norm_yields * 100.0
-            })
+            boundary_features = [f for f in input_cols if f != crude_tag and f != 'crude_api']
+            num_features = len(boundary_features)
+            
+            col_ratios = [1.0] * num_features + [1.2]
+            op_cols = st.columns(col_ratios)
 
-            g_col1, g_col2 = st.columns(2)
-            with g_col1:
-                st.markdown("**Mass Recovery by Product Cut (t/h)**")
-                chart_data = plot_df.set_index("Product Cut")[["Mass Flow (t/h)"]]
-                st.bar_chart(chart_data, color="#0066cc")
+            for i, feat in enumerate(boundary_features):
+                fallback = last_in.get(feat, 350.12 if "cot" in feat.lower() else (1.43 if "p_kgcm2" in feat.lower() else (13.20 if "steam" in feat.lower() else 2.20)))
+                input_data[feat] = op_cols[i].number_input(feat, value=float(fallback), format="%.2f")
 
-            with g_col2:
-                st.markdown("**Yield Fraction Breakdown (% Recovery)**")
-                yield_data = plot_df.set_index("Product Cut")[["Yield Share (%)"]]
-                st.bar_chart(yield_data, color="#ff7f0e")
+            with op_cols[-1]:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                run_sim = st.button("🔮 Run Simulation & Predict", type="primary", use_container_width=True)
 
-            # Always visible: Dynamic Overall Distillate Yield Curves
-            st.markdown("#### 📈 Dynamic Distillate Cut Yield Curves (Yield % vs COT)")
-            sensitivity_df = pd.DataFrame(
-                np.array(yield_sweep_vals), 
-                columns=display_labels, 
-                index=np.round(cot_sweep, 1)
-            )
-            sensitivity_df.index.name = "Furnace COT (deg C)"
-            st.line_chart(sensitivity_df)
-            st.caption("Displays continuous mass yield redistribution across light, intermediate, and bottom cuts across a ±15°C COT range.")
+            if run_sim:
+                input_df = pd.DataFrame([input_data])
+                norm_yields = active_pipeline["yield_model"].predict(input_df)[0]
+                crude_in = input_data.get(crude_tag, crude_in_val)
+                pred_flows = norm_yields * crude_in
+
+                scaled_state = active_pipeline["scaler_states"].transform(input_df)
+                pred_states = active_pipeline["model_states"].predict(scaled_state)[0]
+
+                cot_delta = input_data.get('cot_degC', 350.0) - stats['mean_cot']
+                fzp_delta = input_data.get('flash_zone_p_kgcm2', 1.50) - stats['mean_p']
+
+                for k, s in enumerate(state_targets):
+                    if "top_temp" in s.lower():
+                        pred_states[k] += 0.15 * cot_delta - 2.5 * fzp_delta
+                    elif "pa" in s.lower():
+                        pred_states[k] += 0.80 * cot_delta
+
+                if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
+                    pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
+                else:
+                    cot_curr = float(input_data.get('cot_degC', stats.get('mean_cot', 350.0)))
+                    steam_curr = float(input_data.get('stripping_steam_flow', stats.get('mean_steam', 15.0)))
+                    fzp_curr = float(input_data.get('flash_zone_p_kgcm2', stats.get('mean_p', 1.50)))
+                    api_curr = float(calculated_api)
+                    base_val = stats.get('mean_rco_rec_360', 6.60)
+                    pred_rco_rec_360 = float(np.clip(
+                        base_val - 0.05 * (cot_curr - stats.get('mean_cot', 350.0))
+                                 - 0.18 * (steam_curr - stats.get('mean_steam', 15.0))
+                                 + 1.20 * (fzp_curr - stats.get('mean_p', 1.50))
+                                 - 0.08 * (api_curr - stats.get('mean_api', 34.0)),
+                        1.5, 20.0
+                    ))
+
+                if st.session_state["authenticated"]:
+                    conn = get_db_connection()
+                    outputs_to_save = dict(zip(flow_targets, pred_flows))
+                    outputs_to_save['rco_rec_360_vol_pct'] = pred_rco_rec_360
+                    outputs_to_save.update(dict(zip(state_targets, pred_states)))
+                    conn.execute('''
+                        INSERT INTO simulation_history (username, timestamp, inputs_json, outputs_json)
+                        VALUES (?, ?, ?, ?)
+                    ''', (st.session_state["username"], datetime.now(), json.dumps(input_data), json.dumps(outputs_to_save)))
+                    conn.commit()
+                    conn.close()
+                    sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Logged run for {st.session_state['username']}")
+
+                # ==============================================================
+                # PRIORITY 1: AUTONOMOUS RCO RECOVERY @ 360°C & STRIPPING DIAGNOSTICS
+                # ==============================================================
+                st.divider()
+                st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360°C & Stripping Diagnostics")
+                
+                r_col1, r_col2, r_col3 = st.columns([1.2, 1.8, 1.2])
+                r_col1.metric("Predicted RCO Rec @ 360°C", f"{pred_rco_rec_360:.2f} vol%")
+
+                cot_current = float(input_data.get('cot_degC', 350.12))
+                steam_current = float(input_data.get('stripping_steam_flow', 13.20))
+                fzp_current = float(input_data.get('flash_zone_p_kgcm2', 1.43))
+
+                suggestions = []
+                if pred_rco_rec_360 <= 5.00:
+                    sep_status = "🟢 Deep Cut / Minimal Slippage"
+                    status_color = "success"
+                    suggestions.append("• **Stripping Severity is Optimal:** Residue contains minimal gas oil tail.")
+                    suggestions.append(f"• **Energy Conservation:** Stripping steam is currently `{steam_current:.2f} t/h`. You may safely trim steam by `0.5 - 1.0 t/h` to reduce boiler load without exceeding the 6.5 vol% slippage limit.")
+                elif pred_rco_rec_360 <= 7.50:
+                    sep_status = "🟡 Typical Operational Stripping"
+                    status_color = "info"
+                    suggested_steam = min(steam_current + 1.2, 18.0)
+                    suggested_cot = cot_current + 2.5
+                    suggestions.append(f"• **Moderate Gas Oil Loss:** Slippage is within standard limits but valuable distillate is downgrading to residue.")
+                    suggestions.append(f"• **Recommended Action 1 (Steam):** Increase Stripping Steam from `{steam_current:.2f} t/h` ➔ **`{suggested_steam:.2f} t/h`** (~{suggested_steam/crude_in*1000:.1f} kg/t crude) to strip ~0.3 vol% more gas oil.")
+                    suggestions.append(f"• **Recommended Action 2 (Furnace):** Advance Coil Outlet Temp (COT) from `{cot_current:.2f}°C` ➔ **`{suggested_cot:.2f}°C`** if within furnace tube metallurgy limits.")
+                else:
+                    sep_status = "🔴 High Distillate Loss in Residue"
+                    status_color = "warning"
+                    target_steam = max(steam_current + 2.5, 16.5)
+                    target_cot = min(cot_current + 4.0, 360.0)
+                    suggestions.append("• **Critical Stripping Inefficiency:** Heavy gas oils are sliding directly into the low-value residue pool.")
+                    suggestions.append(f"• **Action Required 1:** Boost Stripping Steam from `{steam_current:.2f} t/h` ➔ **`{target_steam:.2f} t/h`** immediately.")
+                    suggestions.append(f"• **Action Required 2:** Raise Furnace COT from `{cot_current:.2f}°C` ➔ **`{target_cot:.2f}°C`** to shift flash equilibrium.")
+                    if fzp_current > 1.50:
+                        suggestions.append(f"• **Action Required 3:** Column Flash Zone Pressure is elevated (`{fzp_current:.2f} kg/cm²`). Reduce top reflux/condenser pressure drop toward `1.42 kg/cm²` to facilitate vaporization.")
+
+                r_col2.metric("Stripping / Separation Quality", sep_status)
+                steam_ratio = (steam_current / crude_in) * 1000.0
+                r_col3.metric("Stripping Steam Ratio", f"{steam_ratio:.2f} kg/t crude")
+
+                with st.container():
+                    if status_color == "success":
+                        st.success("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
+                    elif status_color == "info":
+                        st.info("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
+                    else:
+                        st.warning("**Operational Diagnostic & Setpoint Suggestions:**\n\n" + "\n".join(suggestions))
+
+                st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT (Thermodynamic Sensitivity)")
+                base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
+                cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
+
+                rco_sweep_vals = []
+                yield_sweep_vals = []
+                for temp in cot_sweep:
+                    temp_input = input_data.copy()
+                    temp_input['cot_degC'] = temp
+                    temp_df = pd.DataFrame([temp_input])
+                    
+                    if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
+                        rco_val = float(active_pipeline["rco_model"].predict(temp_df)[0])
+                    else:
+                        rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
+                    
+                    rco_sweep_vals.append(rco_val)
+                    yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
+
+                rco_curve_df = pd.DataFrame(
+                    {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
+                    index=np.round(cot_sweep, 1)
+                )
+                rco_curve_df.index.name = "Furnace COT (deg C)"
+                st.line_chart(rco_curve_df, color="#d62728")
+                st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
+
+                st.divider()
+                c_left, c_right = st.columns(2)
+                with c_left:
+                    st.subheader("📦 Product Recovery Yields")
+                    st.table(pd.DataFrame({
+                        "Cut Stream": flow_targets,
+                        "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
+                        "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
+                    }))
+                    st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
+
+                with c_right:
+                    st.subheader("🌡️ Predicted States & Product Cut Qualities")
+                    formatted_states = []
+                    for n, v in zip(state_targets, pred_states):
+                        if "d86" in n.lower():
+                            formatted_states.append(f"{v:.2f} °C (ASTM D86 95%)")
+                        elif "temp" in n.lower():
+                            formatted_states.append(f"{v:.2f} °C")
+                        elif "pa" in n.lower():
+                            formatted_states.append(f"{v:.2f} t/h")
+                        else:
+                            formatted_states.append(f"{v:.2f}")
+
+                    st.table(pd.DataFrame({
+                        "Parameter / Cut Quality": state_targets,
+                        "Predicted Value": formatted_states
+                    }))
+
+                st.divider()
+                st.subheader("📊 Product Yield Analytics & Dynamic Curves")
+
+                label_map = {
+                    'flow_offgas': 'Off-Gas & LPG',
+                    'flow_naphtha': 'Naphtha',
+                    'flow_kero': 'Kerosene',
+                    'flow_lago': 'LAGO',
+                    'flow_residue': 'Atm. Residue'
+                }
+                display_labels = [label_map.get(col, col) for col in flow_targets]
+
+                plot_df = pd.DataFrame({
+                    "Product Cut": display_labels,
+                    "Mass Flow (t/h)": pred_flows,
+                    "Yield Share (%)": norm_yields * 100.0
+                })
+
+                g_col1, g_col2 = st.columns(2)
+                with g_col1:
+                    st.markdown("**Mass Recovery by Product Cut (t/h)**")
+                    chart_data = plot_df.set_index("Product Cut")[["Mass Flow (t/h)"]]
+                    st.bar_chart(chart_data, color="#0066cc")
+
+                with g_col2:
+                    st.markdown("**Yield Fraction Breakdown (% Recovery)**")
+                    yield_data = plot_df.set_index("Product Cut")[["Yield Share (%)"]]
+                    st.bar_chart(yield_data, color="#ff7f0e")
+
+                st.markdown("#### 📈 Dynamic Distillate Cut Yield Curves (Yield % vs COT)")
+                sensitivity_df = pd.DataFrame(
+                    np.array(yield_sweep_vals), 
+                    columns=display_labels, 
+                    index=np.round(cot_sweep, 1)
+                )
+                sensitivity_df.index.name = "Furnace COT (deg C)"
+                st.line_chart(sensitivity_df)
+                st.caption("Displays continuous mass yield redistribution across light, intermediate, and bottom cuts across a ±15°C COT range.")
 
 # ==============================================================================
 # PAGE 3: PROTECTED WORKSPACE (MEMBER EXCLUSIVE)
