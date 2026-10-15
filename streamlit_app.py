@@ -343,44 +343,49 @@ class PhysicsInformedYieldModel:
 
         return final_yields / np.sum(final_yields, axis=1, keepdims=True)
 
+from sklearn.ensemble import HistGradientBoostingRegressor
+
 # ==============================================================================
-# NON-LINEAR GRADIENT BOOSTED TWIN FOR RCO RECOVERY @ 360 C (R² > 0.99)
+# NON-LINEAR GRADIENT BOOSTED TWIN FOR RCO RECOVERY @ 360 C (R² > 0.95)
+# ==============================================================================
+from sklearn.ensemble import HistGradientBoostingRegressor
+
+# ==============================================================================
+# NON-LINEAR GRADIENT BOOSTED TWIN FOR RCO RECOVERY @ 360 C (R² > 0.95)
 # ==============================================================================
 class RCOQualityModel:
-    """High-accuracy Gradient Boosted Twin with Thermodynamic Monotonicity Constraints"""
+    """High-accuracy Non-Linear Gradient Boosted Regressor with Thermodynamic Monotonicity"""
     def __init__(self):
-        # Monotonic constraint vector mapped to input_cols:
-        # crude_flow (0), crude_api (0), cot_degC (-1), flash_zone_p (+1), stripping_steam (-1)
-        self.model = GradientBoostingRegressor(
-            n_estimators=120,
+        self.model = HistGradientBoostingRegressor(
+            max_iter=120,
             learning_rate=0.08,
             max_depth=3,
-            subsample=0.9,
-            monotonic_cst=[0, 0, -1, 1, -1],  # Enforces physical directionality
+            min_samples_leaf=2,
             random_state=42
         )
-        self.scaler = StandardScaler()
         self.baseline_stats = {}
+        self.feature_names = []
         self.r2_score_ = 0.992
 
     def fit(self, X, y, baseline_stats):
-        from sklearn.metrics import r2_score
         self.baseline_stats = baseline_stats
-        
-        # When using monotonic_cst, fit directly on unscaled features so directionality is preserved
         self.feature_names = list(X.columns)
         
-        # Build constraint vector dynamically matching input columns
+        # Build physical constraint mapping:
+        # -1: strictly non-increasing (higher temp/steam -> lower/equal RCO @ 360°C)
+        # +1: strictly non-decreasing (higher pressure -> higher/equal RCO @ 360°C)
+        #  0: unconstrained (crude flow, API)
         constraints = []
         for col in self.feature_names:
-            if "cot" in col.lower() or "temp" in col.lower():
-                constraints.append(-1)  # Higher temp -> strictly lower/equal RCO@360
-            elif "steam" in col.lower():
-                constraints.append(-1)  # Higher steam -> strictly lower/equal RCO@360
-            elif "p_kgcm2" in col.lower() or "pres" in col.lower():
-                constraints.append(1)   # Higher pressure -> strictly higher/equal RCO@360
+            c_low = col.lower()
+            if "cot" in c_low or "temp" in c_low:
+                constraints.append(-1)
+            elif "steam" in c_low:
+                constraints.append(-1)
+            elif "p_kgcm2" in c_low or "pres" in c_low:
+                constraints.append(1)
             else:
-                constraints.append(0)   # Unconstrained (API, flow rate)
+                constraints.append(0)
                 
         self.model.set_params(monotonic_cst=constraints)
         self.model.fit(X, y)
@@ -1028,28 +1033,28 @@ elif page == "2. Yield Prediction":
                 base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
                 cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
 
-                rco_sweep_vals = []
-                yield_sweep_vals = []
-                for temp in cot_sweep:
-                    temp_input = input_data.copy()
-                    temp_input['cot_degC'] = temp
-                    temp_df = pd.DataFrame([temp_input])
-                    
-                    if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
-                        rco_val = float(active_pipeline["rco_model"].predict(temp_df)[0])
-                    else:
-                        rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
-                    
-                    rco_sweep_vals.append(rco_val)
-                    yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
+# Generate RCO sweep values
+            rco_sweep_vals = []
+            yield_sweep_vals = []
+            for temp in cot_sweep:
+                temp_input = input_data.copy()
+                temp_input['cot_degC'] = temp
+                temp_df = pd.DataFrame([temp_input])
+                
+                if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
+                    rco_val = float(active_pipeline["rco_model"].predict(temp_df)[0])
+                else:
+                    rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
+                
+                rco_sweep_vals.append(rco_val)
+                yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
 
-                rco_curve_df = pd.DataFrame(
-                    {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
-                    index=np.round(cot_sweep, 1)
-                )
-                rco_curve_df.index.name = "Furnace COT (deg C)"
-                st.line_chart(rco_curve_df, color="#d62728")
-                st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
+            # Thermodynamic post-filter: enforces non-increasing curve along rising COT
+            rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
+            rco_curve_df = pd.DataFrame(
+                {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
+                index=np.round(cot_sweep, 1)
+            )
 
                 # Product yields & internal states
                 st.divider()
