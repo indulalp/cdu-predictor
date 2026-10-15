@@ -347,13 +347,16 @@ class PhysicsInformedYieldModel:
 # NON-LINEAR GRADIENT BOOSTED TWIN FOR RCO RECOVERY @ 360 C (R² > 0.99)
 # ==============================================================================
 class RCOQualityModel:
-    """High-accuracy Non-Linear Gradient Boosted Regressor for RCO @ 360 C"""
+    """High-accuracy Gradient Boosted Twin with Thermodynamic Monotonicity Constraints"""
     def __init__(self):
+        # Monotonic constraint vector mapped to input_cols:
+        # crude_flow (0), crude_api (0), cot_degC (-1), flash_zone_p (+1), stripping_steam (-1)
         self.model = GradientBoostingRegressor(
             n_estimators=120,
             learning_rate=0.08,
             max_depth=3,
             subsample=0.9,
+            monotonic_cst=[0, 0, -1, 1, -1],  # Enforces physical directionality
             random_state=42
         )
         self.scaler = StandardScaler()
@@ -361,15 +364,31 @@ class RCOQualityModel:
         self.r2_score_ = 0.992
 
     def fit(self, X, y, baseline_stats):
+        from sklearn.metrics import r2_score
         self.baseline_stats = baseline_stats
-        X_scaled = self.scaler.fit_transform(X)
-        self.model.fit(X_scaled, y)
-        preds = self.model.predict(X_scaled)
+        
+        # When using monotonic_cst, fit directly on unscaled features so directionality is preserved
+        self.feature_names = list(X.columns)
+        
+        # Build constraint vector dynamically matching input columns
+        constraints = []
+        for col in self.feature_names:
+            if "cot" in col.lower() or "temp" in col.lower():
+                constraints.append(-1)  # Higher temp -> strictly lower/equal RCO@360
+            elif "steam" in col.lower():
+                constraints.append(-1)  # Higher steam -> strictly lower/equal RCO@360
+            elif "p_kgcm2" in col.lower() or "pres" in col.lower():
+                constraints.append(1)   # Higher pressure -> strictly higher/equal RCO@360
+            else:
+                constraints.append(0)   # Unconstrained (API, flow rate)
+                
+        self.model.set_params(monotonic_cst=constraints)
+        self.model.fit(X, y)
+        preds = self.model.predict(X)
         self.r2_score_ = float(r2_score(y, preds))
 
     def predict(self, X_df):
-        X_scaled = self.scaler.transform(X_df)
-        preds = self.model.predict(X_scaled)
+        preds = self.model.predict(X_df[self.feature_names])
         return np.clip(preds, 1.5, 20.0)
 
 # ==============================================================================
