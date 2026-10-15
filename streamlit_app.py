@@ -1055,6 +1055,9 @@ elif page == "2. Yield Prediction":
                 {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
                 index=np.round(cot_sweep, 1)
             )
+            rco_curve_df.index.name = "Furnace COT (deg C)"
+            st.line_chart(rco_curve_df, color="#d62728")
+            st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
 
                 # Product yields & internal states
                 st.divider()
