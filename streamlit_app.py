@@ -1059,7 +1059,7 @@ elif page == "2. Yield Prediction":
                 # Product yields & internal states
                 st.divider()
                 c_left, c_right = st.columns(2)[cite: 6]
-                with c_left:[cite: 6]
+                with c_left:
                     st.subheader("📦 Product Recovery Yields")[cite: 6]
                     st.table(pd.DataFrame({
                         "Cut Stream": flow_targets,
