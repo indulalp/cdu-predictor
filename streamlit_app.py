@@ -1058,36 +1058,36 @@ elif page == "2. Yield Prediction":
             rco_curve_df.index.name = "Furnace COT (deg C)"
             st.line_chart(rco_curve_df, color="#d62728")
             st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
+            
+            # Product yields & internal states
+            st.divider()
+            c_left, c_right = st.columns(2)
+            with c_left:
+                st.subheader("📦 Product Recovery Yields")
+                st.table(pd.DataFrame({
+                    "Cut Stream": flow_targets,
+                    "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
+                    "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
+                }))
+                st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
 
-                # Product yields & internal states
-                st.divider()
-                c_left, c_right = st.columns(2)
-                with c_left:
-                    st.subheader("📦 Product Recovery Yields")
-                    st.table(pd.DataFrame({
-                        "Cut Stream": flow_targets,
-                        "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
-                        "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
-                    }))
-                    st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
+            with c_right:
+                st.subheader("🌡️ Predicted States & Product Cut Qualities")
+                formatted_states = []
+                for n, v in zip(state_targets, pred_states):
+                    if "d86" in n.lower():
+                        formatted_states.append(f"{v:.2f} °C (ASTM D86 95%)")
+                    elif "temp" in n.lower():
+                        formatted_states.append(f"{v:.2f} °C")
+                    elif "pa" in n.lower():
+                        formatted_states.append(f"{v:.2f} t/h")
+                    else:
+                        formatted_states.append(f"{v:.2f}")
 
-                with c_right:
-                    st.subheader("🌡️ Predicted States & Product Cut Qualities")
-                    formatted_states = []
-                    for n, v in zip(state_targets, pred_states):
-                        if "d86" in n.lower():
-                            formatted_states.append(f"{v:.2f} °C (ASTM D86 95%)")
-                        elif "temp" in n.lower():
-                            formatted_states.append(f"{v:.2f} °C")
-                        elif "pa" in n.lower():
-                            formatted_states.append(f"{v:.2f} t/h")
-                        else:
-                            formatted_states.append(f"{v:.2f}")
-
-                    st.table(pd.DataFrame({
-                        "Parameter / Cut Quality": state_targets,
-                        "Predicted Value": formatted_states
-                    }))
+                st.table(pd.DataFrame({
+                    "Parameter / Cut Quality": state_targets,
+                    "Predicted Value": formatted_states
+                }))
 
                 # Bar charts & always-visible sensitivity curve
                 st.divider()
