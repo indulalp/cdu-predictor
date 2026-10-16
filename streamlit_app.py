@@ -1047,20 +1047,20 @@ elif page == "2. Yield Prediction":
                     yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
 
                 # Monotonic filter prevents upward step artifacts
-                rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))[cite: 6]
+                rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
                 rco_curve_df = pd.DataFrame(
                     {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
                     index=np.round(cot_sweep, 1)
-                )[cite: 6]
+                )
                 rco_curve_df.index.name = "Furnace COT (deg C)"
                 st.line_chart(rco_curve_df, color="#d62728")
                 st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
 
                 # Product yields & internal states
                 st.divider()
-                c_left, c_right = st.columns(2)[cite: 6]
+                c_left, c_right = st.columns(2)
                 with c_left:
-                    st.subheader("📦 Product Recovery Yields")[cite: 6]
+                    st.subheader("📦 Product Recovery Yields")
                     st.table(pd.DataFrame({
                         "Cut Stream": flow_targets,
                         "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
