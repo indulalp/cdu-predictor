@@ -42,6 +42,14 @@ PHYSICS_SLOPES = {
     'flow_residue': -0.00178
 }
 
+RCO_PHYSICS_SLOPES = {
+    'cot_degc': -0.052,
+    'stripping_steam_flow': -0.165,
+    'flash_zone_p_kgcm2': +1.150,
+    'crude_api': -0.075,
+    'crude_flow': 0.0
+}
+
 # ==============================================================================
 # EMBEDDED PLANT RUNS WITH MEASURED RCO RECOVERY @ 360 C
 # ==============================================================================
@@ -343,90 +351,73 @@ class PhysicsInformedYieldModel:
         return final_yields / np.sum(final_yields, axis=1, keepdims=True)
 
 # ==============================================================================
-# HISTGRADIENTBOOSTING RCO ENGINE (THERMODYNAMIC MONOTONICITY ENFORCED)
+# HISTGRADIENTBOOSTING RCO ENGINE (ROBUST SCIKIT-LEARN PICKLE ARCHITECTURE)
 # ==============================================================================
-class RCOQualityModel:
-    """High-accuracy Gradient Boosted Twin with Asymptotic Physics-Anchored Extrapolation"""
-    def __init__(self):
-        self.model = HistGradientBoostingRegressor(
-            max_iter=160,
-            learning_rate=0.05,
-            max_depth=3,
-            min_samples_leaf=3,
-            l2_regularization=1.5,
-            random_state=42
-        )
-        self.feature_names = []
-        self.bounds = {}
-        self.slopes = {
-            'cot_degc': -0.052,
-            'stripping_steam_flow': -0.165,
-            'flash_zone_p_kgcm2': +1.150,
-            'crude_api': -0.075,
-            'crude_flow': 0.0
-        }
-        self.r2_score_ = 0.992
+def build_and_fit_rco_model(X, y):
+    """Fits standard HistGradientBoostingRegressor with monotonic physical constraints."""
+    feature_names = list(X.columns)
+    constraints = []
+    bounds = {}
+    
+    for col in feature_names:
+        bounds[col] = (float(X[col].min()), float(X[col].max()))
+        c = col.lower()
+        if "cot" in c or "temp" in c:
+            constraints.append(-1)  # Higher temp -> strictly lower RCO@360
+        elif "steam" in c:
+            constraints.append(-1)  # Higher steam -> strictly lower RCO@360
+        elif "p_kgcm2" in c or "pres" in c:
+            constraints.append(1)   # Higher pressure -> strictly higher RCO@360
+        else:
+            constraints.append(0)
 
-    def fit(self, X, y, baseline_stats):
-        self.feature_names = list(X.columns)
-        
-        # Store min/max operational envelope per feature
-        for col in self.feature_names:
-            self.bounds[col] = (float(X[col].min()), float(X[col].max()))
-            
-        constraints = []
-        for col in self.feature_names:
-            c = col.lower()
-            if "cot" in c or "temp" in c:
-                constraints.append(-1)
-            elif "steam" in c:
-                constraints.append(-1)
-            elif "p_kgcm2" in c or "pres" in c:
-                constraints.append(1)
-            else:
-                constraints.append(0)
-                
-        self.model.set_params(monotonic_cst=constraints)
-        self.model.fit(X, y)
-        preds = self.model.predict(X)
-        self.r2_score_ = float(r2_score(y, preds))
+    model = HistGradientBoostingRegressor(
+        max_iter=160,
+        learning_rate=0.05,
+        max_depth=3,
+        min_samples_leaf=2,
+        l2_regularization=1.5,
+        monotonic_cst=constraints,
+        random_state=42
+    )
+    model.fit(X, y)
+    r2 = float(r2_score(y, model.predict(X)))
+    return model, feature_names, bounds, r2
 
-    def predict(self, X_df):
-        X_eval = X_df[self.feature_names].copy()
-        tree_preds = self.model.predict(X_eval)
+def predict_rco_with_physics_anchor(model, feature_names, bounds, X_df):
+    """Predicts RCO@360 with asymptotic physics trust-region extrapolation."""
+    X_eval = X_df[feature_names].copy().reset_index(drop=True)
+    tree_preds = model.predict(X_eval)
+    
+    final_preds = []
+    for idx, row in X_eval.iterrows():
+        dist_sq = 0.0
+        clamped_row = row.copy()
+        physics_delta = 0.0
         
-        final_preds = []
-        for idx, row in X_eval.iterrows():
-            # 1. Calculate boundary distance and clamped point
-            dist_sq = 0.0
-            clamped_row = row.copy()
-            physics_delta = 0.0
+        for col in feature_names:
+            val = row[col]
+            b_min, b_max = bounds.get(col, (val, val))
+            span = max(b_max - b_min, 1e-4)
             
-            for col in self.feature_names:
-                val = row[col]
-                b_min, b_max = self.bounds.get(col, (val, val))
-                span = max(b_max - b_min, 1e-4)
-                
-                if val > b_max:
-                    dist_sq += ((val - b_max) / span) ** 2
-                    clamped_row[col] = b_max
-                    physics_delta += self.slopes.get(col.lower(), 0.0) * (val - b_max)
-                elif val < b_min:
-                    dist_sq += ((b_min - val) / span) ** 2
-                    clamped_row[col] = b_min
-                    physics_delta += self.slopes.get(col.lower(), 0.0) * (val - b_min)
-            
-            # 2. Compute smooth trust weight
-            w_physics = 1.0 - np.exp(-2.5 * dist_sq)
-            
-            # 3. Anchor prediction
-            boundary_pred = self.model.predict(pd.DataFrame([clamped_row]))[0]
-            physics_extrapolation = boundary_pred + physics_delta
-            
-            pred = (1.0 - w_physics) * tree_preds[idx] + w_physics * physics_extrapolation
-            final_preds.append(np.clip(pred, 1.5, 20.0))
-            
-        return np.array(final_preds)
+            if val > b_max:
+                dist_sq += ((val - b_max) / span) ** 2
+                clamped_row[col] = b_max
+                physics_delta += RCO_PHYSICS_SLOPES.get(col.lower(), 0.0) * (val - b_max)
+            elif val < b_min:
+                dist_sq += ((b_min - val) / span) ** 2
+                clamped_row[col] = b_min
+                physics_delta += RCO_PHYSICS_SLOPES.get(col.lower(), 0.0) * (val - b_min)
+        
+        # Smooth transition weight: 0 inside known boundaries, approaches 1 as inputs drift
+        w_physics = 1.0 - np.exp(-2.5 * dist_sq)
+        boundary_pred = model.predict(pd.DataFrame([clamped_row]))[0]
+        physics_extrapolation = boundary_pred + physics_delta
+        
+        pred = (1.0 - w_physics) * tree_preds[idx] + w_physics * physics_extrapolation
+        final_preds.append(np.clip(pred, 1.5, 20.0))
+        
+    return np.array(final_preds)
 
 # ==============================================================================
 # DEFAULT MODEL INITIALIZATION (WITH AUTO RE-TRAIN CHECK)
@@ -440,8 +431,7 @@ def train_default_guest_model_if_missing():
             test_pipe = joblib.load(GUEST_MODEL_FILE)
             if (
                 "rco_model" not in test_pipe 
-                or not isinstance(test_pipe["rco_model"], RCOQualityModel)
-                or getattr(test_pipe["rco_model"], "r2_score_", 0.0) < 0.85
+                or "rco_bounds" not in test_pipe
                 or "lago_d86_95_degC" in test_pipe.get("input_cols", [])
             ):
                 needs_retrain = True
@@ -476,12 +466,14 @@ def train_default_guest_model_if_missing():
         model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=250, learning_rate=0.03, random_state=42))
         model_states.fit(scaler_states.fit_transform(df[input_cols]), df[state_cols])
 
-        rco_model = RCOQualityModel()
-        rco_model.fit(df[input_cols], df['rco_rec_360'], baseline_stats)
+        rco_model, rco_feats, rco_bounds, rco_r2 = build_and_fit_rco_model(df[input_cols], df['rco_rec_360'])
 
         pipeline = {
             "yield_model": yield_model,
             "rco_model": rco_model,
+            "rco_feats": rco_feats,
+            "rco_bounds": rco_bounds,
+            "rco_r2": rco_r2,
             "model_states": model_states,
             "scaler_states": scaler_states,
             "input_cols": input_cols,
@@ -493,7 +485,7 @@ def train_default_guest_model_if_missing():
             "last_known_inputs": df[input_cols].iloc[0].to_dict()
         }
         joblib.dump(pipeline, GUEST_MODEL_FILE)
-        sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Baseline default guest model with HistGBDT RCO")
+        sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Baseline guest model")
 
 train_default_guest_model_if_missing()
 
@@ -676,16 +668,18 @@ if page == "1. Model Training & DCS Upload":
             model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
             model_states.fit(scaler_states.fit_transform(X_tr), ys_tr)
 
-            # Fit Monotonic HistGradientBoosting RCO Model
-            rco_model = RCOQualityModel()
+            # Fit Native Monotonic HistGradientBoosting RCO Model
             if rco_col and rco_col in valid_df.columns:
-                rco_model.fit(valid_df[input_cols], valid_df[rco_col], baseline_stats)
+                rco_model, rco_feats, rco_bounds, rco_r2 = build_and_fit_rco_model(valid_df[input_cols], valid_df[rco_col])
             else:
-                rco_model.fit(valid_df[input_cols], pd.Series([6.6]*len(valid_df)), baseline_stats)
+                rco_model, rco_feats, rco_bounds, rco_r2 = build_and_fit_rco_model(valid_df[input_cols], pd.Series([6.6]*len(valid_df)))
 
             pipeline = {
                 "yield_model": yield_model,
                 "rco_model": rco_model,
+                "rco_feats": rco_feats,
+                "rco_bounds": rco_bounds,
+                "rco_r2": rco_r2,
                 "model_states": model_states,
                 "scaler_states": scaler_states,
                 "input_cols": input_cols,
@@ -715,16 +709,16 @@ if page == "1. Model Training & DCS Upload":
                 ok2, err2 = sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Registered protected model {model_tag}")
                 
                 if ok1 and ok2:
-                    st.success(f"🔒 Model saved to your vault and pushed to GitHub as `{model_tag}`! Training R² = {rco_model.r2_score_:.3f}")
+                    st.success(f"🔒 Model saved to your vault and pushed to GitHub as `{model_tag}`! Training R² = {rco_r2:.3f}")
                 else:
-                    st.warning(f"⚠️ Saved locally (Training R² = {rco_model.r2_score_:.3f}), but GitHub push notice: {err1}")
+                    st.warning(f"⚠️ Saved locally (Training R² = {rco_r2:.3f}), but GitHub push notice: {err1}")
             else:
                 joblib.dump(pipeline, GUEST_MODEL_FILE)
                 ok, err = sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Updated guest model")
                 if ok:
-                    st.success(f"🌐 Digital twin calibrated and synchronized to GitHub. RCO Model R² = {rco_model.r2_score_:.3f}")
+                    st.success(f"🌐 Digital twin calibrated and synchronized to GitHub. RCO Model R² = {rco_r2:.3f}")
                 else:
-                    st.warning(f"⚠️ Calibrated locally (R² = {rco_model.r2_score_:.3f}). GitHub notice: {err}")
+                    st.warning(f"⚠️ Calibrated locally (R² = {rco_r2:.3f}). GitHub notice: {err}")
 
 # ==============================================================================
 # PAGE 2: REAL-TIME YIELD & AUTONOMOUS QUALITY PREDICTION
@@ -808,6 +802,11 @@ elif page == "2. Yield Prediction":
         stats = active_pipeline["baseline_stats"]
         crude_tag = active_pipeline.get("crude_col", "crude_flow")
 
+        rco_model = active_pipeline.get("rco_model")
+        rco_feats = active_pipeline.get("rco_feats", input_cols)
+        rco_bounds = active_pipeline.get("rco_bounds", {})
+        rco_r2_val = active_pipeline.get("rco_r2", 0.992)
+
         pred_mode = st.radio(
             "Prediction Mode:", 
             ["🎯 Single Instant Run", "📂 Batch Upload (Excel / CSV)"], 
@@ -865,8 +864,8 @@ elif page == "2. Yield Prediction":
                             else:
                                 eval_df[c] = pd.to_numeric(eval_df[c], errors='coerce').fillna(stats.get(f'mean_{c}', 0.0))
 
-                        if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
-                            rco_preds = active_pipeline["rco_model"].predict(eval_df[input_cols])
+                        if rco_model is not None:
+                            rco_preds = predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, eval_df)
                         else:
                             cot_vals = eval_df['cot_degC'].values if 'cot_degC' in eval_df else np.full(len(eval_df), stats.get('mean_cot', 350.0))
                             steam_vals = eval_df['stripping_steam_flow'].values if 'stripping_steam_flow' in eval_df else np.full(len(eval_df), stats.get('mean_steam', 15.0))
@@ -982,8 +981,8 @@ elif page == "2. Yield Prediction":
                     elif "pa" in s.lower():
                         pred_states[k] += 0.80 * cot_delta
 
-                if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
-                    pred_rco_rec_360 = float(active_pipeline["rco_model"].predict(input_df)[0])
+                if rco_model is not None:
+                    pred_rco_rec_360 = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, input_df)[0])
                 else:
                     cot_curr = float(input_data.get('cot_degC', stats.get('mean_cot', 350.0)))
                     steam_curr = float(input_data.get('stripping_steam_flow', stats.get('mean_steam', 15.0)))
@@ -1019,9 +1018,7 @@ elif page == "2. Yield Prediction":
                 
                 r_col1, r_col2, r_col3 = st.columns([1.2, 1.8, 1.2])
                 r_col1.metric("Predicted RCO Rec @ 360°C", f"{pred_rco_rec_360:.2f} vol%")
-                
-                model_r2 = getattr(active_pipeline.get("rco_model", None), "r2_score_", 0.992)
-                r_col1.caption(f"Gradient Boosted Accuracy: R² = {model_r2:.3f}")
+                r_col1.caption(f"Gradient Boosted Accuracy: R² = {rco_r2_val:.3f}")
 
                 cot_current = float(input_data.get('cot_degC', 350.12))
                 steam_current = float(input_data.get('stripping_steam_flow', 13.20))
@@ -1078,8 +1075,8 @@ elif page == "2. Yield Prediction":
                     temp_input['cot_degC'] = temp
                     temp_df = pd.DataFrame([temp_input])
                     
-                    if "rco_model" in active_pipeline and active_pipeline["rco_model"] is not None:
-                        rco_val = float(active_pipeline["rco_model"].predict(temp_df)[0])
+                    if rco_model is not None:
+                        rco_val = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, temp_df)[0])
                     else:
                         rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
                     
