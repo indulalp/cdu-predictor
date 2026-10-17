@@ -346,35 +346,42 @@ class PhysicsInformedYieldModel:
 # HISTGRADIENTBOOSTING RCO ENGINE (THERMODYNAMIC MONOTONICITY ENFORCED)
 # ==============================================================================
 class RCOQualityModel:
-    """High-accuracy Non-Linear Gradient Boosted Regressor with Thermodynamic Monotonicity"""
+    """High-accuracy Gradient Boosted Twin with Asymptotic Physics-Anchored Extrapolation"""
     def __init__(self):
         self.model = HistGradientBoostingRegressor(
-            max_iter=120,
-            learning_rate=0.08,
+            max_iter=160,
+            learning_rate=0.05,
             max_depth=3,
-            min_samples_leaf=2,
+            min_samples_leaf=3,
+            l2_regularization=1.5,
             random_state=42
         )
-        self.baseline_stats = {}
         self.feature_names = []
+        self.bounds = {}
+        self.slopes = {
+            'cot_degc': -0.052,
+            'stripping_steam_flow': -0.165,
+            'flash_zone_p_kgcm2': +1.150,
+            'crude_api': -0.075,
+            'crude_flow': 0.0
+        }
         self.r2_score_ = 0.992
 
     def fit(self, X, y, baseline_stats):
-        self.baseline_stats = baseline_stats
         self.feature_names = list(X.columns)
         
-        # Build physical constraint mapping:
-        # -1: strictly non-increasing (higher temp/steam -> lower/equal RCO @ 360°C)
-        # +1: strictly non-decreasing (higher pressure -> higher/equal RCO @ 360°C)
-        #  0: unconstrained (crude flow, API)
+        # Store min/max operational envelope per feature
+        for col in self.feature_names:
+            self.bounds[col] = (float(X[col].min()), float(X[col].max()))
+            
         constraints = []
         for col in self.feature_names:
-            c_low = col.lower()
-            if "cot" in c_low or "temp" in c_low:
+            c = col.lower()
+            if "cot" in c or "temp" in c:
                 constraints.append(-1)
-            elif "steam" in c_low:
+            elif "steam" in c:
                 constraints.append(-1)
-            elif "p_kgcm2" in c_low or "pres" in c_low:
+            elif "p_kgcm2" in c or "pres" in c:
                 constraints.append(1)
             else:
                 constraints.append(0)
@@ -385,8 +392,41 @@ class RCOQualityModel:
         self.r2_score_ = float(r2_score(y, preds))
 
     def predict(self, X_df):
-        preds = self.model.predict(X_df[self.feature_names])
-        return np.clip(preds, 1.5, 20.0)
+        X_eval = X_df[self.feature_names].copy()
+        tree_preds = self.model.predict(X_eval)
+        
+        final_preds = []
+        for idx, row in X_eval.iterrows():
+            # 1. Calculate boundary distance and clamped point
+            dist_sq = 0.0
+            clamped_row = row.copy()
+            physics_delta = 0.0
+            
+            for col in self.feature_names:
+                val = row[col]
+                b_min, b_max = self.bounds.get(col, (val, val))
+                span = max(b_max - b_min, 1e-4)
+                
+                if val > b_max:
+                    dist_sq += ((val - b_max) / span) ** 2
+                    clamped_row[col] = b_max
+                    physics_delta += self.slopes.get(col.lower(), 0.0) * (val - b_max)
+                elif val < b_min:
+                    dist_sq += ((b_min - val) / span) ** 2
+                    clamped_row[col] = b_min
+                    physics_delta += self.slopes.get(col.lower(), 0.0) * (val - b_min)
+            
+            # 2. Compute smooth trust weight
+            w_physics = 1.0 - np.exp(-2.5 * dist_sq)
+            
+            # 3. Anchor prediction
+            boundary_pred = self.model.predict(pd.DataFrame([clamped_row]))[0]
+            physics_extrapolation = boundary_pred + physics_delta
+            
+            pred = (1.0 - w_physics) * tree_preds[idx] + w_physics * physics_extrapolation
+            final_preds.append(np.clip(pred, 1.5, 20.0))
+            
+        return np.array(final_preds)
 
 # ==============================================================================
 # DEFAULT MODEL INITIALIZATION (WITH AUTO RE-TRAIN CHECK)
