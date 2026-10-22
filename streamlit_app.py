@@ -429,17 +429,28 @@ class PhysicsInformedYieldModel:
             + 0.85 * (api - self.baseline_stats.get('mean_api', 34.0))
         )
 
-        # Realistic sigmoidal EFV curvature with distinct diminishing returns
-        # Scales smoothly across +/-15 deg C with visible asymptotic leveling
+        # Realistic asymptotic non-linear saturation factor for flash zone lift
         non_linear_severity = 18.0 * np.tanh(delta_severity / 12.0)
 
-        final_yields = np.zeros_like(base_yields)
-        for i, col in enumerate(self.flow_targets):
-            slope = PHYSICS_SLOPES.get(col, 0.0)
-            adj = base_yields[:, i] + (slope * non_linear_severity)
-            min_b, max_b = YIELD_BOUNDS.get(col, (0.0005, 0.90))
-            final_yields[:, i] = np.clip(adj, min_b, max_b)
+        # 1. Distribute lift specifically to LAGO & Residue (Zero-sum balance)
+        # S_lago = +0.00178, S_residue = -0.00178
+        delta_lago = 0.00178 * non_linear_severity
+        delta_residue = -0.00178 * non_linear_severity
 
+        final_yields = base_yields.copy()
+        for i, col in enumerate(self.flow_targets):
+            if col == 'flow_residue':
+                final_yields[:, i] = base_yields[:, i] + delta_residue
+            elif col == 'flow_lago':
+                final_yields[:, i] = base_yields[:, i] + delta_lago
+            # Offgas, Naphtha, and Kero yields are not altered by furnace severity
+            else:
+                final_yields[:, i] = base_yields[:, i]
+
+            min_b, max_b = YIELD_BOUNDS.get(col, (0.0005, 0.90))
+            final_yields[:, i] = np.clip(final_yields[:, i], min_b, max_b)
+
+        # Re-normalize to guarantee exact 100.0% mass balance closure
         return final_yields / np.sum(final_yields, axis=1, keepdims=True)
 
 # ==============================================================================
