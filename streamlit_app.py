@@ -411,10 +411,13 @@ class PhysicsInformedYieldModel:
             + 0.85 * (api - self.baseline_stats.get('mean_api', 34.0))
         )
 
+        # Asymptotic non-linear saturation factor for realistic equilibrium curves
+        non_linear_severity = delta_severity / (1.0 + 0.035 * np.abs(delta_severity))
+
         final_yields = np.zeros_like(base_yields)
         for i, col in enumerate(self.flow_targets):
             slope = PHYSICS_SLOPES.get(col, 0.0)
-            adj = base_yields[:, i] + (slope * delta_severity)
+            adj = base_yields[:, i] + (slope * non_linear_severity)
             min_b, max_b = YIELD_BOUNDS.get(col, (0.0005, 0.90))
             final_yields[:, i] = np.clip(adj, min_b, max_b)
 
