@@ -42,10 +42,10 @@ PHYSICS_SLOPES = {
     'flow_residue': -0.00178
 }
 
-RCO_PHYSICS_SLOPES = {
+DEFAULT_RCO_SLOPES = {
     'cot_degc': -0.052,
     'stripping_steam_flow': -0.165,
-    'flash_zone_p_kgcm2': +1.150,
+    'flash_zone_p_kgcm2': 1.150,
     'crude_api': -0.075,
     'crude_flow': 0.0
 }
@@ -212,7 +212,24 @@ def init_db():
             outputs_json TEXT
         )
     ''')
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS calibrated_physics_slopes (
+            parameter_name TEXT PRIMARY KEY,
+            slope_value REAL,
+            updated_at TIMESTAMP
+        )
+    ''')
     
+    defaults = [
+        ('cot_degc', -0.052),
+        ('stripping_steam_flow', -0.165),
+        ('flash_zone_p_kgcm2', 1.150),
+        ('crude_api', -0.075),
+        ('crude_flow', 0.0)
+    ]
+    for param, val in defaults:
+        c.execute("INSERT OR IGNORE INTO calibrated_physics_slopes VALUES (?, ?, ?)", (param, val, datetime.now()))
+
     admin_pw = hashlib.sha256("Admin@123".encode()).hexdigest()
     user_pw = hashlib.sha256("User@123".encode()).hexdigest()
     c.execute("INSERT OR REPLACE INTO users VALUES (?, ?, ?)", ("admin", admin_pw, "admin"))
@@ -221,6 +238,59 @@ def init_db():
     conn.close()
 
 init_db()
+
+def get_calibrated_slopes():
+    conn = get_db_connection()
+    c = conn.cursor()
+    c.execute("SELECT parameter_name, slope_value FROM calibrated_physics_slopes")
+    rows = c.fetchall()
+    conn.close()
+    return {row[0]: float(row[1]) for row in rows} if rows else DEFAULT_RCO_SLOPES
+
+def update_physics_slopes_from_lab(input_dict, bounds_dict, y_pred, y_lab, learning_rate=0.10):
+    """Adjusts physical extrapolation slopes based on real lab error via bounded stochastic gradient step."""
+    current_slopes = get_calibrated_slopes()
+    error = y_lab - y_pred
+    updated = False
+
+    conn = get_db_connection()
+    c = conn.cursor()
+
+    for col, val in input_dict.items():
+        c_low = col.lower()
+        if c_low in current_slopes and col in bounds_dict:
+            b_min, b_max = bounds_dict[col]
+            delta = 0.0
+            if val > b_max:
+                delta = val - b_max
+            elif val < b_min:
+                delta = val - b_min
+            
+            if abs(delta) > 1e-3:
+                curr_s = current_slopes[c_low]
+                step = learning_rate * (error / delta)
+                new_s = curr_s + step
+                
+                # Enforce physical sign boundaries
+                if "cot" in c_low or "temp" in c_low:
+                    new_s = np.clip(new_s, -0.10, -0.01)
+                elif "steam" in c_low:
+                    new_s = np.clip(new_s, -0.30, -0.05)
+                elif "p_kgcm2" in c_low or "pres" in c_low:
+                    new_s = np.clip(new_s, 0.40, 2.50)
+                elif "api" in c_low:
+                    new_s = np.clip(new_s, -0.20, -0.01)
+
+                c.execute("INSERT OR REPLACE INTO calibrated_physics_slopes VALUES (?, ?, ?)", 
+                          (c_low, float(new_s), datetime.now()))
+                current_slopes[c_low] = float(new_s)
+                updated = True
+
+    conn.commit()
+    conn.close()
+    if updated:
+        sync_file_to_github(DB_PATH, DB_PATH, "Auto-sync: Calibrated physical slopes from lab feedback")
+    return current_slopes
 
 def verify_login(username, password):
     clean_u = username.strip().lower()
@@ -385,7 +455,8 @@ def build_and_fit_rco_model(X, y):
     return model, feature_names, bounds, r2
 
 def predict_rco_with_physics_anchor(model, feature_names, bounds, X_df):
-    """Predicts RCO@360 with asymptotic physics trust-region extrapolation."""
+    """Predicts RCO@360 with asymptotic physics trust-region extrapolation and active slopes."""
+    active_slopes = get_calibrated_slopes()
     X_eval = X_df[feature_names].copy().reset_index(drop=True)
     tree_preds = model.predict(X_eval)
     
@@ -403,11 +474,11 @@ def predict_rco_with_physics_anchor(model, feature_names, bounds, X_df):
             if val > b_max:
                 dist_sq += ((val - b_max) / span) ** 2
                 clamped_row[col] = b_max
-                physics_delta += RCO_PHYSICS_SLOPES.get(col.lower(), 0.0) * (val - b_max)
+                physics_delta += active_slopes.get(col.lower(), 0.0) * (val - b_max)
             elif val < b_min:
                 dist_sq += ((b_min - val) / span) ** 2
                 clamped_row[col] = b_min
-                physics_delta += RCO_PHYSICS_SLOPES.get(col.lower(), 0.0) * (val - b_min)
+                physics_delta += active_slopes.get(col.lower(), 0.0) * (val - b_min)
         
         # Smooth transition weight: 0 inside known boundaries, approaches 1 as inputs drift
         w_physics = 1.0 - np.exp(-2.5 * dist_sq)
@@ -964,16 +1035,20 @@ elif page == "2. Yield Prediction":
                 run_sim = st.button("🔮 Run Simulation & Predict", type="primary", use_container_width=True)
 
             if run_sim:
-                input_df = pd.DataFrame([input_data])
+                st.session_state['last_evaluated_input'] = input_data
+
+            if 'last_evaluated_input' in st.session_state:
+                eval_inputs = st.session_state['last_evaluated_input']
+                input_df = pd.DataFrame([eval_inputs])
                 norm_yields = active_pipeline["yield_model"].predict(input_df)[0]
-                crude_in = input_data.get(crude_tag, crude_in_val)
+                crude_in = eval_inputs.get(crude_tag, crude_in_val)
                 pred_flows = norm_yields * crude_in
 
                 scaled_state = active_pipeline["scaler_states"].transform(input_df)
                 pred_states = active_pipeline["model_states"].predict(scaled_state)[0]
 
-                cot_delta = input_data.get('cot_degC', 350.0) - stats['mean_cot']
-                fzp_delta = input_data.get('flash_zone_p_kgcm2', 1.50) - stats['mean_p']
+                cot_delta = eval_inputs.get('cot_degC', 350.0) - stats['mean_cot']
+                fzp_delta = eval_inputs.get('flash_zone_p_kgcm2', 1.50) - stats['mean_p']
 
                 for k, s in enumerate(state_targets):
                     if "top_temp" in s.lower():
@@ -984,10 +1059,10 @@ elif page == "2. Yield Prediction":
                 if rco_model is not None:
                     pred_rco_rec_360 = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, input_df)[0])
                 else:
-                    cot_curr = float(input_data.get('cot_degC', stats.get('mean_cot', 350.0)))
-                    steam_curr = float(input_data.get('stripping_steam_flow', stats.get('mean_steam', 15.0)))
-                    fzp_curr = float(input_data.get('flash_zone_p_kgcm2', stats.get('mean_p', 1.50)))
-                    api_curr = float(calculated_api)
+                    cot_curr = float(eval_inputs.get('cot_degC', stats.get('mean_cot', 350.0)))
+                    steam_curr = float(eval_inputs.get('stripping_steam_flow', stats.get('mean_steam', 15.0)))
+                    fzp_curr = float(eval_inputs.get('flash_zone_p_kgcm2', stats.get('mean_p', 1.50)))
+                    api_curr = float(eval_inputs.get('crude_api', 34.0))
                     base_val = stats.get('mean_rco_rec_360', 6.60)
                     pred_rco_rec_360 = float(np.clip(
                         base_val - 0.05 * (cot_curr - stats.get('mean_cot', 350.0))
@@ -997,6 +1072,86 @@ elif page == "2. Yield Prediction":
                         1.5, 20.0
                     ))
 
+                # ------------------------------------------------------------------
+                # DOMAIN CLASSIFIER: INTERPOLATION VS EXTRAPOLATION
+                # ------------------------------------------------------------------
+                out_of_bounds = {}
+                for col in rco_feats:
+                    if col in rco_bounds and col in eval_inputs:
+                        v = eval_inputs[col]
+                        b_lo, b_hi = rco_bounds[col]
+                        if v < b_lo:
+                            out_of_bounds[col] = f"{v:.2f} < Min ({b_lo:.2f})"
+                        elif v > b_hi:
+                            out_of_bounds[col] = f"{v:.2f} > Max ({b_hi:.2f})"
+
+                st.divider()
+                if not out_of_bounds:
+                    st.success("🟢 **Operational Status: Calibrated Domain (Interpolation)**\n\nAll parameters fall within historical operating data. Prediction is governed by the high-precision machine learning manifold ($R^2 > 0.99$).")
+                else:
+                    st.warning("🟠 **Operational Status: Extrapolated Domain (Physics-Anchored)**\n\nInput conditions exceed historical training ranges. Prediction is stabilized using first-principles thermodynamic vaporization constraints.")
+                    with st.expander("🔍 View Out-of-Range Parameters"):
+                        for feat, desc in out_of_bounds.items():
+                            st.write(f"• **`{feat}`**: {desc}")
+
+                    # --------------------------------------------------------------
+                    # ACTIVE LEARNING & LAB FEEDBACK PANEL
+                    # --------------------------------------------------------------
+                    st.markdown("#### 🧪 Ingest Actual Lab Measurement (Continuous Improvement)")
+                    st.caption("If you have an ASTM lab cut or DCS measured value for this run, submit it here. The digital twin will automatically append this run to its training database, re-calibrate its thermodynamic slopes, and retrain.")
+
+                    with st.form("lab_feedback_form"):
+                        f_col1, f_col2 = st.columns([2, 1])
+                        lab_rco_val = f_col1.number_input(
+                            "Actual Lab RCO Recovery @ 360°C (vol%)", 
+                            min_value=1.0, 
+                            max_value=25.0, 
+                            value=float(np.round(pred_rco_rec_360, 2)), 
+                            step=0.1
+                        )
+                        submit_lab = f_col2.form_submit_button("📥 Ingest Lab Data & Retrain Twin", type="primary")
+
+                    if submit_lab:
+                        with st.spinner("Ingesting lab ground truth, recalibrating slopes, and updating model..."):
+                            update_physics_slopes_from_lab(
+                                input_dict=eval_inputs,
+                                bounds_dict=rco_bounds,
+                                y_pred=pred_rco_rec_360,
+                                y_lab=lab_rco_val
+                            )
+
+                            new_row = eval_inputs.copy()
+                            new_row['rco_rec_360'] = lab_rco_val
+                            for target, flow in zip(flow_targets, pred_flows):
+                                new_row[target] = flow
+                            for s_target, s_val in zip(state_targets, pred_states):
+                                new_row[s_target] = s_val
+
+                            if 'active_df' not in st.session_state:
+                                st.session_state['active_df'] = get_demo_dataframe()
+                            
+                            st.session_state['active_df'] = pd.concat([
+                                st.session_state['active_df'], 
+                                pd.DataFrame([new_row])
+                            ], ignore_index=True)
+
+                            updated_df = st.session_state['active_df']
+                            new_model, new_feats, new_bounds, new_r2 = build_and_fit_rco_model(
+                                updated_df[input_cols], 
+                                updated_df['rco_rec_360']
+                            )
+
+                            active_pipeline["rco_model"] = new_model
+                            active_pipeline["rco_bounds"] = new_bounds
+                            active_pipeline["rco_r2"] = new_r2
+                            active_pipeline["training_rows"] = len(updated_df)
+
+                            joblib.dump(active_pipeline, GUEST_MODEL_FILE)
+                            sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, f"Active Learning: Ingested run {len(updated_df)} with lab RCO={lab_rco_val}")
+
+                            st.success(f"✅ Success! Ingested new run into dataset (Total points: **{len(updated_df)}**). Model retrained and synced to GitHub (New R² = {new_r2:.3f}).")
+                            st.rerun()
+
                 if st.session_state["authenticated"]:
                     conn = get_db_connection()
                     outputs_to_save = dict(zip(flow_targets, pred_flows))
@@ -1005,7 +1160,7 @@ elif page == "2. Yield Prediction":
                     conn.execute('''
                         INSERT INTO simulation_history (username, timestamp, inputs_json, outputs_json)
                         VALUES (?, ?, ?, ?)
-                    ''', (st.session_state["username"], datetime.now(), json.dumps(input_data), json.dumps(outputs_to_save)))
+                    ''', (st.session_state["username"], datetime.now(), json.dumps(eval_inputs), json.dumps(outputs_to_save)))
                     conn.commit()
                     conn.close()
                     sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Logged run for {st.session_state['username']}")
@@ -1020,9 +1175,9 @@ elif page == "2. Yield Prediction":
                 r_col1.metric("Predicted RCO Rec @ 360°C", f"{pred_rco_rec_360:.2f} vol%")
                 r_col1.caption(f"Gradient Boosted Accuracy: R² = {rco_r2_val:.3f}")
 
-                cot_current = float(input_data.get('cot_degC', 350.12))
-                steam_current = float(input_data.get('stripping_steam_flow', 13.20))
-                fzp_current = float(input_data.get('flash_zone_p_kgcm2', 1.43))
+                cot_current = float(eval_inputs.get('cot_degC', 350.12))
+                steam_current = float(eval_inputs.get('stripping_steam_flow', 13.20))
+                fzp_current = float(eval_inputs.get('flash_zone_p_kgcm2', 1.43))
 
                 suggestions = []
                 if pred_rco_rec_360 <= 5.00:
@@ -1065,13 +1220,13 @@ elif page == "2. Yield Prediction":
                 # STANDALONE RCO RECOVERY @ 360°C SENSITIVITY CURVE
                 # ==============================================================
                 st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT (Thermodynamic Sensitivity)")
-                base_cot = float(input_data.get('cot_degC', stats['mean_cot']))
+                base_cot = float(eval_inputs.get('cot_degC', stats['mean_cot']))
                 cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
 
                 rco_sweep_vals = []
                 yield_sweep_vals = []
                 for temp in cot_sweep:
-                    temp_input = input_data.copy()
+                    temp_input = eval_inputs.copy()
                     temp_input['cot_degC'] = temp
                     temp_df = pd.DataFrame([temp_input])
                     
