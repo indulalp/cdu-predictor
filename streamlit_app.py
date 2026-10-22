@@ -411,8 +411,9 @@ class PhysicsInformedYieldModel:
             + 0.85 * (api - self.baseline_stats.get('mean_api', 34.0))
         )
 
-        # Asymptotic non-linear saturation factor for realistic equilibrium curves
-        non_linear_severity = delta_severity / (1.0 + 0.035 * np.abs(delta_severity))
+        # Realistic sigmoidal EFV curvature with distinct diminishing returns
+        # Scales smoothly across +/-15 deg C with visible asymptotic leveling
+        non_linear_severity = 18.0 * np.tanh(delta_severity / 12.0)
 
         final_yields = np.zeros_like(base_yields)
         for i, col in enumerate(self.flow_targets):
