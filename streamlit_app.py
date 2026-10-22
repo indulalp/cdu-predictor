@@ -35,11 +35,11 @@ YIELD_BOUNDS = {
 }
 
 PHYSICS_SLOPES = {
-    'flow_offgas': 0.00004,   # Minimal thermal sensitivity
-    'flow_naphtha': 0.00015,  # Reduced from 0.00045 (already vaporized)
-    'flow_kero': 0.00015,     # Minimal sensitivity to COT
-    'flow_lago': 0.00144,     # Absorbs most recovered distillate
-    'flow_residue': -0.00178  # Residue loss balances the gain (Sum = 0)
+    'flow_offgas': 0.00001,   # Fixed assay fraction (essentially zero COT sensitivity)
+    'flow_naphtha': 0.00005,  # Negligible sensitivity (already 100% vaporized)
+    'flow_kero': 0.00018,     # Slight tail sensitivity
+    'flow_lago': 0.00154,     # Absorbs the primary thermal vaporization
+    'flow_residue': -0.00178  # Exact zero-sum balance: sum(slopes) == 0.0
 }
 
 DEFAULT_RCO_SLOPES = {
