@@ -242,6 +242,24 @@ init_db()
 def get_calibrated_slopes():
     conn = get_db_connection()
     c = conn.cursor()
+    c.execute('''
+        CREATE TABLE IF NOT EXISTS calibrated_physics_slopes (
+            parameter_name TEXT PRIMARY KEY,
+            slope_value REAL,
+            updated_at TIMESTAMP
+        )
+    ''')
+    defaults = [
+        ('cot_degc', -0.052),
+        ('stripping_steam_flow', -0.165),
+        ('flash_zone_p_kgcm2', 1.150),
+        ('crude_api', -0.075),
+        ('crude_flow', 0.0)
+    ]
+    for param, val in defaults:
+        c.execute("INSERT OR IGNORE INTO calibrated_physics_slopes VALUES (?, ?, ?)", (param, val, datetime.now()))
+    conn.commit()
+
     c.execute("SELECT parameter_name, slope_value FROM calibrated_physics_slopes")
     rows = c.fetchall()
     conn.close()
