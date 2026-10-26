@@ -1120,7 +1120,7 @@ elif page == "2. Yield Prediction":
 
                 st.divider()
                 if not out_of_bounds:
-                    st.success("🟢 **Operational Status: Calibrated Domain (Interpolation)**\n\nAll parameters fall within historical operating data. Prediction is governed by the high-precision machine learning manifold ($R^2 > 0.99$).")
+                    st.success("🟢 **Operational Status: Calibrated Domain (Interpolation)**\n\nAll parameters fall within historical operating data.")
                 else:
                     st.warning("🟠 **Operational Status: Extrapolated Domain (Physics-Anchored)**\n\nInput conditions exceed historical training ranges. Prediction is stabilized using first-principles thermodynamic vaporization constraints.")
                     with st.expander("🔍 View Out-of-Range Parameters"):
