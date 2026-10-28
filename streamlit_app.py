@@ -412,7 +412,18 @@ class PhysicsInformedYieldModel:
         self.linear_reg.fit(X_scaled, logits)
 
     def predict(self, X_df):
-        X_scaled = self.scaler.transform(X_df)
+        # Guarantee exact column order and presence as fitted in self.scaler
+        if hasattr(self.scaler, "feature_names_in_"):
+            cols = list(self.scaler.feature_names_in_)
+            # Fill any missing feature with 0.0 or baseline to prevent ValueError
+            for c in cols:
+                if c not in X_df.columns:
+                    X_df[c] = self.baseline_stats.get(f'mean_{c}', 0.0)
+            X_eval = X_df[cols]
+        else:
+            X_eval = X_df
+
+        X_scaled = self.scaler.transform(X_eval)
         ml_preds = self.ml_model.predict(X_scaled)
         linear_preds = softmax(self.linear_reg.predict(X_scaled))
         base_yields = 0.70 * ml_preds + 0.30 * linear_preds
