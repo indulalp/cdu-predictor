@@ -28,8 +28,8 @@ GUEST_MODEL_FILE = "models/guest_model.pkl"
 # Physical Engineering Bounds matched to actual CDU operating cuts
 YIELD_BOUNDS = {
     'flow_offgas': (0.0005, 0.050),
-    'flow_naphtha': (0.020, 0.150),
-    'flow_kero': (0.030, 0.120),
+    'flow_naphtha': (0.100, 0.230),
+    'flow_kero': (0.010, 0.080),
     'flow_lago': (0.150, 0.350),
     'flow_residue': (0.400, 0.650)
 }
