@@ -7,7 +7,6 @@ import hashlib
 import requests
 import json
 import joblib
-import plotly.graph_objects as go
 from datetime import datetime
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import StandardScaler
@@ -1095,36 +1094,9 @@ elif page == "2. Yield Prediction":
 
                 rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
                 st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT")
-                
-                fig_rco = go.Figure()
-                fig_rco.add_trace(go.Scatter(
-                    x=np.round(cot_sweep, 1),
-                    y=np.round(rco_sweep_vals, 2),
-                    mode='lines',
-                    line=dict(color='#d62728', width=3),
-                    name='RCO Rec @ 360°C',
-                    hovertemplate='<b>Furnace COT</b>: %{x:.1f} °C<br><b>RCO Rec @ 360°C</b>: %{y:.2f} vol%<extra></extra>'
-                ))
-
-                fig_rco.update_layout(
-                    xaxis_title="Furnace COT (°C)",
-                    yaxis_title="RCO Recovery @ 360°C (vol%)",
-                    margin=dict(l=65, r=20, t=25, b=45),  # 65px left margin guarantees 2-digit & 3-digit numbers never clip
-                    yaxis=dict(
-                        showgrid=True,
-                        gridcolor='rgba(200, 200, 200, 0.2)',
-                        zeroline=False,
-                        tickformat=".1f"  # Formats cleanly as 6.0, 8.0, 10.0, 12.0
-                    ),
-                    xaxis=dict(
-                        showgrid=True,
-                        gridcolor='rgba(200, 200, 200, 0.2)'
-                    ),
-                    height=380,
-                    template="plotly_white"
-                )
-
-                st.plotly_chart(fig_rco, use_container_width=True)
+                rco_curve_df = pd.DataFrame({"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals}, index=np.round(cot_sweep, 1))
+                rco_curve_df.index.name = "Furnace COT (deg C)"
+                st.line_chart(rco_curve_df, color="#d62728")
 
                 # --------------------------------------------------------------
                 # PRODUCT YIELDS (6 CUTS WITH LPG) & GRAPHICAL OUTPUTS
@@ -1187,81 +1159,20 @@ elif page == "2. Yield Prediction":
                 st.caption("Demonstrates stable mass fractionation across all cuts: Off-Gas and LPG remain flat, while non-linear lift exchanges between Residue and LAGO.")
 
 # ==============================================================================
-# PAGE 3: PROTECTED WORKSPACE & HISTORY (WITH CLIENT MODEL MANAGEMENT)
+# PAGE 3: PROTECTED WORKSPACE
 # ==============================================================================
 elif page == "3. Protected Workspace & History":
     st.header(f"🔒 Protected Workspace: `{st.session_state['username']}`")
     conn = get_db_connection()
     tab_my_models, tab_my_sims = st.tabs(["📁 My Saved Models", "📜 My Simulation History"])
-    
     with tab_my_models:
         st.subheader("Your Isolated Models")
-        my_models = pd.read_sql_query(
-            "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY id DESC", 
-            conn, 
-            params=(st.session_state['username'],)
-        )
-        
-        if not my_models.empty:
-            # Display clean summary table (excluding internal file path)
-            st.dataframe(my_models[["id", "model_tag", "training_rows", "created_at"]], use_container_width=True)
-            
-            st.divider()
-            st.markdown("#### 🗑️ Delete a Saved Model")
-            del_c1, del_c2 = st.columns([3, 1])
-            
-            # Map unique identifier and labels
-            client_model_map = {
-                f"ID {row['id']} — Tag: {row['model_tag']} (Trained on: {row['created_at']})": (row['id'], row['model_path'], row['model_tag'])
-                for _, row in my_models.iterrows()
-            }
-            
-            chosen_model_label = del_c1.selectbox(
-                "Select Model to Delete:", 
-                options=list(client_model_map.keys()),
-                key="client_del_model_select"
-            )
-            
-            with del_c2:
-                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
-                delete_btn = st.button("🗑️ Delete Selected Model", type="primary", use_container_width=True)
-                
-            if delete_btn:
-                target_id, target_path, target_tag = client_model_map[chosen_model_label]
-                
-                # 1. Unlink physical pickle artifact from the server filesystem
-                if target_path and os.path.exists(target_path):
-                    try:
-                        os.remove(target_path)
-                    except Exception as err:
-                        st.warning(f"Note: Local file cleanup reported: {err}")
-                
-                # 2. Delete database entry strictly scoped to current logged-in user
-                conn.execute(
-                    "DELETE FROM protected_models WHERE id = ? AND username = ?", 
-                    (target_id, st.session_state['username'])
-                )
-                conn.commit()
-                
-                # 3. Synchronise the updated SQLite database with GitHub
-                sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: User {st.session_state['username']} deleted model ID {target_id}")
-                st.success(f"Model `{target_tag}` (ID: {target_id}) was permanently deleted.")
-                st.rerun()
-        else:
-            st.info("No saved models found in your private vault.")
-            
+        my_models = pd.read_sql_query("SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC", conn, params=(st.session_state['username'],))
+        st.dataframe(my_models, use_container_width=True) if not my_models.empty else st.info("No saved models.")
     with tab_my_sims:
         st.subheader("Your Saved Simulations")
-        my_sims = pd.read_sql_query(
-            "SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC", 
-            conn, 
-            params=(st.session_state['username'],)
-        )
-        if not my_sims.empty:
-            st.dataframe(my_sims, use_container_width=True)
-        else:
-            st.info("No simulations recorded yet.")
-            
+        my_sims = pd.read_sql_query("SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC", conn, params=(st.session_state['username'],))
+        st.dataframe(my_sims, use_container_width=True) if not my_sims.empty else st.info("No simulations on record.")
     conn.close()
 
 # ==============================================================================
@@ -1378,4 +1289,3 @@ elif page == "🛡️ Admin Audit & Telemetry":
         st.dataframe(access_df, use_container_width=True)
 
     conn.close()
-
