@@ -1094,8 +1094,9 @@ elif page == "2. Yield Prediction":
 
                 rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
                 st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT")
-                rco_curve_df = pd.DataFrame({"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals}, index=np.round(cot_sweep, 1))
-                rco_curve_df.index.name = "Furnace COT (deg C)"
+                rco_curve_df = pd.DataFrame({
+                    "RCO Recovery @ 360°C (vol%)": pd.Series(rco_sweep_vals, dtype=float)
+                }, index=pd.Index(np.round(cot_sweep, 1), name="Furnace COT (°C)", dtype=float))
                 st.line_chart(rco_curve_df, color="#d62728")
 
                 # --------------------------------------------------------------
