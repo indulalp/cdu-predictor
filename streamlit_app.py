@@ -29,10 +29,10 @@ GUEST_MODEL_FILE = "models/guest_model.pkl"
 YIELD_BOUNDS = {
     'flow_offgas': (0.0005, 0.050),
     'flow_lpg': (0.0010, 0.040),
-    'flow_naphtha': (0.050, 0.300),   # Bounded for actual 250-430 t/h operations
-    'flow_kero': (0.020, 0.150),
+    'flow_naphtha': (0.100, 0.230),   # Bounded for actual 250-430 t/h operations
+    'flow_kero': (0.010, 0.080),
     'flow_lago': (0.120, 0.350),      # Absorbs total atmospheric gas oil
-    'flow_residue': (0.350, 0.650)
+    'flow_residue': (0.400, 0.650)
 }
 
 # Thermodynamic zero-sum slopes: Flash zone lift exchanges between Residue and LAGO; lights remain flat
