@@ -29,13 +29,13 @@ GUEST_MODEL_FILE = "models/guest_model.pkl"
 YIELD_BOUNDS = {
     'flow_offgas': (0.0005, 0.050),
     'flow_lpg': (0.0010, 0.040),
-    'flow_naphtha': (0.100, 0.230),   # Bounded for actual 250-430 t/h operations
+    'flow_naphtha': (0.100, 0.230),   # Accommodates full 250-430 t/h operational range
     'flow_kero': (0.010, 0.080),
-    'flow_lago': (0.120, 0.350),      # Absorbs total atmospheric gas oil
-    'flow_residue': (0.400, 0.650)
+    'flow_lago': (0.150, 0.350),      # Total atmospheric gas oil fraction
+    'flow_residue': (0.450, 0.650)
 }
 
-# Thermodynamic zero-sum slopes: Flash zone lift exchanges between Residue and LAGO; lights remain flat
+# Thermodynamic zero-sum slopes: Lift exchanges between Residue and LAGO; lights remain flat
 PHYSICS_SLOPES = {
     'flow_offgas': 0.00001,
     'flow_lpg': 0.00002,
@@ -50,7 +50,8 @@ DEFAULT_RCO_SLOPES = {
     'stripping_steam_flow': -0.165,
     'flash_zone_p_kgcm2': 1.150,
     'crude_api': -0.075,
-    'crude_flow': 0.0
+    'crude_flow': 0.0,
+    'flow_rate': 0.0
 }
 
 # ==============================================================================
@@ -315,7 +316,7 @@ def log_login_event(username):
     sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Login log for {username}")
 
 # ==============================================================================
-# PHYSICS-INFORMED ENGINE WITH DYNAMIC 6-CUT SATURATION
+# PHYSICS-INFORMED ENGINE (NATIVE SERIALIZABLE FUNCTIONS - NO PICKLE ERRORS)
 # ==============================================================================
 def density_to_api(density_val):
     sg = density_val / 1000.0 if density_val > 10.0 else density_val
@@ -327,58 +328,52 @@ def softmax(x):
     e_x = np.exp(x - np.max(x, axis=-1, keepdims=True))
     return e_x / np.sum(e_x, axis=-1, keepdims=True)
 
-class PhysicsInformedYieldModel:
-    def __init__(self):
-        self.ml_model = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
-        self.linear_reg = Ridge(alpha=1.0)
-        self.scaler = StandardScaler()
-        self.flow_targets = []
-        self.baseline_stats = {}
+def predict_yields_with_physics(yield_dict, X_df):
+    """
+    Natively picklable physics-informed multi-cut yield prediction function.
+    Eliminates _pickle.PicklingError while guaranteeing mass conservation.
+    """
+    scaler = yield_dict['scaler']
+    ml_model = yield_dict['ml_model']
+    linear_reg = yield_dict['linear_reg']
+    flow_targets = yield_dict['flow_targets']
+    baseline_stats = yield_dict['baseline_stats']
 
-    def fit(self, X, y_yields, flow_targets, baseline_stats):
-        self.flow_targets = flow_targets
-        self.baseline_stats = baseline_stats
-        X_scaled = self.scaler.fit_transform(X)
-        self.ml_model.fit(X_scaled, y_yields)
-        logits = np.log(np.clip(y_yields.values, 1e-4, 1.0))
-        self.linear_reg.fit(X_scaled, logits)
+    X_scaled = scaler.transform(X_df)
+    ml_preds = ml_model.predict(X_scaled)
+    linear_preds = softmax(linear_reg.predict(X_scaled))
+    base_yields = 0.70 * ml_preds + 0.30 * linear_preds
 
-    def predict(self, X_df):
-        X_scaled = self.scaler.transform(X_df)
-        ml_preds = self.ml_model.predict(X_scaled)
-        linear_preds = softmax(self.linear_reg.predict(X_scaled))
-        base_yields = 0.70 * ml_preds + 0.30 * linear_preds
+    cot = X_df['cot_degC'].values if 'cot_degC' in X_df else baseline_stats['mean_cot']
+    fzp = X_df['flash_zone_p_kgcm2'].values if 'flash_zone_p_kgcm2' in X_df else baseline_stats['mean_p']
+    steam = X_df['stripping_steam_flow'].values if 'stripping_steam_flow' in X_df else baseline_stats['mean_steam']
+    api = X_df['crude_api'].values if 'crude_api' in X_df else baseline_stats.get('mean_api', 34.0)
 
-        cot = X_df['cot_degC'].values if 'cot_degC' in X_df else self.baseline_stats['mean_cot']
-        fzp = X_df['flash_zone_p_kgcm2'].values if 'flash_zone_p_kgcm2' in X_df else self.baseline_stats['mean_p']
-        steam = X_df['stripping_steam_flow'].values if 'stripping_steam_flow' in X_df else self.baseline_stats['mean_steam']
-        api = X_df['crude_api'].values if 'crude_api' in X_df else self.baseline_stats.get('mean_api', 34.0)
+    delta_severity = (
+        (cot - baseline_stats['mean_cot'])
+        - 16.5 * (fzp - baseline_stats['mean_p'])
+        + 0.55 * (steam - baseline_stats['mean_steam'])
+        + 0.85 * (api - baseline_stats.get('mean_api', 34.0))
+    )
 
-        delta_severity = (
-            (cot - self.baseline_stats['mean_cot'])
-            - 16.5 * (fzp - self.baseline_stats['mean_p'])
-            + 0.55 * (steam - self.baseline_stats['mean_steam'])
-            + 0.85 * (api - self.baseline_stats.get('mean_api', 34.0))
-        )
+    non_linear_severity = 18.0 * np.tanh(delta_severity / 12.0)
 
-        non_linear_severity = 18.0 * np.tanh(delta_severity / 12.0)
+    delta_residue = -0.00178 * non_linear_severity
+    delta_lago = 0.00158 * non_linear_severity
 
-        delta_residue = -0.00178 * non_linear_severity
-        delta_lago = 0.00158 * non_linear_severity
+    final_yields = base_yields.copy()
+    for i, col in enumerate(flow_targets):
+        if col == 'flow_residue':
+            final_yields[:, i] = base_yields[:, i] + delta_residue
+        elif 'lago' in col or 'ago' in col:
+            final_yields[:, i] = base_yields[:, i] + delta_lago
+        else:
+            final_yields[:, i] = base_yields[:, i]
 
-        final_yields = base_yields.copy()
-        for i, col in enumerate(self.flow_targets):
-            if col == 'flow_residue':
-                final_yields[:, i] = base_yields[:, i] + delta_residue
-            elif 'lago' in col or 'ago' in col:
-                final_yields[:, i] = base_yields[:, i] + delta_lago
-            else:
-                final_yields[:, i] = base_yields[:, i]
+        min_b, max_b = YIELD_BOUNDS.get(col, (0.0005, 0.90))
+        final_yields[:, i] = np.clip(final_yields[:, i], min_b, max_b)
 
-            min_b, max_b = YIELD_BOUNDS.get(col, (0.0005, 0.90))
-            final_yields[:, i] = np.clip(final_yields[:, i], min_b, max_b)
-
-        return final_yields / np.sum(final_yields, axis=1, keepdims=True)
+    return final_yields / np.sum(final_yields, axis=1, keepdims=True)
 
 # ==============================================================================
 # HISTGRADIENTBOOSTING RCO ENGINE
@@ -441,7 +436,7 @@ def predict_rco_with_physics_anchor(model, feature_names, bounds, X_df):
     return np.array(final_preds)
 
 # ==============================================================================
-# DEFAULT MODEL INITIALIZATION (AUTO RE-TRAIN WITH LPG CHECK)
+# DEFAULT MODEL INITIALIZATION (ROBUST SCIKIT-LEARN DICTIONARY SERIALIZATION)
 # ==============================================================================
 def train_default_guest_model_if_missing():
     needs_retrain = False
@@ -453,6 +448,7 @@ def train_default_guest_model_if_missing():
             if (
                 "rco_model" not in test_pipe 
                 or "rco_bounds" not in test_pipe
+                or "yield_model_dict" not in test_pipe
                 or "flow_lpg" not in test_pipe.get("flow_targets", [])
             ):
                 needs_retrain = True
@@ -480,8 +476,23 @@ def train_default_guest_model_if_missing():
             'mean_rco_rec_360': float(df['rco_rec_360'].mean())
         }
 
-        yield_model = PhysicsInformedYieldModel()
-        yield_model.fit(df[input_cols], yield_targets, flow_cols, baseline_stats)
+        scaler_yields = StandardScaler()
+        X_scaled = scaler_yields.fit_transform(df[input_cols])
+        
+        ml_yield_model = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
+        ml_yield_model.fit(X_scaled, yield_targets)
+        
+        logits = np.log(np.clip(yield_targets.values, 1e-4, 1.0))
+        linear_reg = Ridge(alpha=1.0)
+        linear_reg.fit(X_scaled, logits)
+
+        yield_model_dict = {
+            'scaler': scaler_yields,
+            'ml_model': ml_yield_model,
+            'linear_reg': linear_reg,
+            'flow_targets': flow_cols,
+            'baseline_stats': baseline_stats
+        }
 
         scaler_states = StandardScaler()
         model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=250, learning_rate=0.03, random_state=42))
@@ -490,7 +501,7 @@ def train_default_guest_model_if_missing():
         rco_model, rco_feats, rco_bounds, rco_r2 = build_and_fit_rco_model(df[input_cols], df['rco_rec_360'])
 
         pipeline = {
-            "yield_model": yield_model,
+            "yield_model_dict": yield_model_dict,
             "rco_model": rco_model,
             "rco_feats": rco_feats,
             "rco_bounds": rco_bounds,
@@ -506,7 +517,7 @@ def train_default_guest_model_if_missing():
             "last_known_inputs": df[input_cols].iloc[0].to_dict()
         }
         joblib.dump(pipeline, GUEST_MODEL_FILE)
-        sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Calibrated model with LPG support")
+        sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Calibrated model with robust joblib architecture")
 
 train_default_guest_model_if_missing()
 
@@ -556,7 +567,7 @@ if st.session_state["role"] == "admin":
 page = st.sidebar.radio("Navigation", nav_options, index=1)
 
 # ==============================================================================
-# PAGE 1: MODEL TRAINING & INGESTION (WITH AUTOMATIC LPG DETECTION)
+# PAGE 1: MODEL TRAINING & INGESTION (AUTOMATED LPG DETECTION)
 # ==============================================================================
 if page == "1. Model Training & DCS Upload":
     st.header("⚙️ Column Data Ingestion & Model Training")
@@ -595,7 +606,6 @@ if page == "1. Model Training & DCS Upload":
         df['crude_api'] = df[dens_cols[0]].apply(density_to_api)
         st.success(f"Calculated `crude_api` automatically from `{dens_cols[0]}`")
 
-    # Automated detection for crude throughput tag
     detected_crude = None
     for cand in ['flow_rate', 'crude_flow', 'crude_rate', 'feed_flow']:
         if cand in df.columns:
@@ -607,7 +617,6 @@ if page == "1. Model Training & DCS Upload":
     rco_target_candidates = [c for c in df.columns if 'rco' in str(c).lower() or '360' in str(c).lower()]
     default_rco_col = rco_target_candidates[0] if rco_target_candidates else None
 
-    # Automated detection for product flows (including LPG)
     detected_flows = []
     flow_priority_patterns = ['offgas', 'lpg', 'naphtha', 'nap', 'kero', 'lago', 'hago', 'residue']
     for pattern in flow_priority_patterns:
@@ -641,7 +650,7 @@ if page == "1. Model Training & DCS Upload":
             model_tag = c_save2.text_input("Protected Model Tag", value=f"{st.session_state['username']}_v1")
 
     if st.button("🚀 Train Digital Twin", type="primary"):
-        with st.spinner("Training digital twin with LPG fractionation support..."):
+        with st.spinner("Training digital twin with robust scikit-learn dictionary architecture..."):
             needed_cols = []
             for c in (input_cols + flow_cols + state_cols + [crude_col] + ([rco_col] if rco_col else [])):
                 if c not in needed_cols and c in df.columns:
@@ -676,8 +685,23 @@ if page == "1. Model Training & DCS Upload":
                 'mean_rco_rec_360': float(valid_df[rco_col].mean()) if (rco_col and rco_col in valid_df.columns) else 6.60
             }
 
-            yield_model = PhysicsInformedYieldModel()
-            yield_model.fit(X_tr, yf_tr, flow_cols, baseline_stats)
+            scaler_yields = StandardScaler()
+            X_scaled = scaler_yields.fit_transform(X_tr)
+            
+            ml_yield_model = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
+            ml_yield_model.fit(X_scaled, yf_tr)
+            
+            logits = np.log(np.clip(yf_tr.values, 1e-4, 1.0))
+            linear_reg = Ridge(alpha=1.0)
+            linear_reg.fit(X_scaled, logits)
+
+            yield_model_dict = {
+                'scaler': scaler_yields,
+                'ml_model': ml_yield_model,
+                'linear_reg': linear_reg,
+                'flow_targets': flow_cols,
+                'baseline_stats': baseline_stats
+            }
 
             scaler_states = StandardScaler()
             model_states = MultiOutputRegressor(LGBMRegressor(n_estimators=300, learning_rate=0.03, random_state=42))
@@ -689,7 +713,7 @@ if page == "1. Model Training & DCS Upload":
                 rco_model, rco_feats, rco_bounds, rco_r2 = build_and_fit_rco_model(valid_df[input_cols], pd.Series([6.6]*len(valid_df)))
 
             pipeline = {
-                "yield_model": yield_model,
+                "yield_model_dict": yield_model_dict,
                 "rco_model": rco_model,
                 "rco_feats": rco_feats,
                 "rco_bounds": rco_bounds,
@@ -853,7 +877,7 @@ elif page == "2. Yield Prediction":
                         else:
                             rco_preds = np.full(len(eval_df), stats.get('mean_rco_rec_360', 6.60))
 
-                        norm_yields = active_pipeline["yield_model"].predict(eval_df[input_cols])
+                        norm_yields = predict_yields_with_physics(active_pipeline["yield_model_dict"], eval_df[input_cols])
                         crude_rates = eval_df[active_crude_col if active_crude_col in eval_df else crude_tag].values
                         scaled_state = active_pipeline["scaler_states"].transform(eval_df[input_cols])
                         pred_states = active_pipeline["model_states"].predict(scaled_state)
@@ -925,7 +949,7 @@ elif page == "2. Yield Prediction":
             if 'last_evaluated_input' in st.session_state:
                 eval_inputs = st.session_state['last_evaluated_input']
                 input_df = pd.DataFrame([eval_inputs])
-                norm_yields = active_pipeline["yield_model"].predict(input_df)[0]
+                norm_yields = predict_yields_with_physics(active_pipeline["yield_model_dict"], input_df)[0]
                 crude_in = eval_inputs.get(crude_tag, crude_in_val)
                 pred_flows = norm_yields * crude_in
 
@@ -1025,7 +1049,7 @@ elif page == "2. Yield Prediction":
                     temp_df = pd.DataFrame([temp_input])
                     rco_val = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, temp_df)[0]) if rco_model is not None else 6.30
                     rco_sweep_vals.append(rco_val)
-                    yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
+                    yield_sweep_vals.append(predict_yields_with_physics(active_pipeline["yield_model_dict"], temp_df)[0] * 100.0)
 
                 rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
                 st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT")
