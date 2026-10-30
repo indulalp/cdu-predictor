@@ -1079,37 +1079,52 @@ elif page == "2. Yield Prediction":
                 r_col2.metric("Stripping Status", sep_status)
                 r_col3.metric("Stripping Steam Ratio", f"{steam_ratio:.2f} kg/t crude")
 
-                # ==============================================================
-                # STANDALONE RCO RECOVERY @ 360°C SENSITIVITY CURVE
-                # ==============================================================
-                st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT (Thermodynamic Sensitivity)")
+                # Standalone RCO Curve Sweep
                 base_cot = float(eval_inputs.get('cot_degC', stats['mean_cot']))
                 cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
-
                 rco_sweep_vals = []
                 yield_sweep_vals = []
+
                 for temp in cot_sweep:
                     temp_input = eval_inputs.copy()
                     temp_input['cot_degC'] = temp
                     temp_df = pd.DataFrame([temp_input])
-                    
-                    if rco_model is not None:
-                        rco_val = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, temp_df)[0])
-                    else:
-                        rco_val = float(np.clip(pred_rco_rec_360 - 0.05 * (temp - base_cot), 1.5, 20.0))
-                    
+                    rco_val = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, temp_df)[0]) if rco_model is not None else 6.30
                     rco_sweep_vals.append(rco_val)
-                    yield_sweep_vals.append(active_pipeline["yield_model"].predict(temp_df)[0] * 100.0)
+                    yield_sweep_vals.append(predict_yields_with_physics(active_pipeline["yield_model_dict"], temp_df)[0] * 100.0)
 
-                # Monotonic filter prevents upward step artifacts
                 rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
-                rco_curve_df = pd.DataFrame(
-                    {"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals},
-                    index=np.round(cot_sweep, 1)
+                st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT")
+                
+                fig_rco = go.Figure()
+                fig_rco.add_trace(go.Scatter(
+                    x=np.round(cot_sweep, 1),
+                    y=np.round(rco_sweep_vals, 2),
+                    mode='lines',
+                    line=dict(color='#d62728', width=3),
+                    name='RCO Rec @ 360°C',
+                    hovertemplate='<b>Furnace COT</b>: %{x:.1f} °C<br><b>RCO Rec @ 360°C</b>: %{y:.2f} vol%<extra></extra>'
+                ))
+
+                fig_rco.update_layout(
+                    xaxis_title="Furnace COT (°C)",
+                    yaxis_title="RCO Recovery @ 360°C (vol%)",
+                    margin=dict(l=65, r=20, t=25, b=45),  # 65px left margin guarantees 2-digit & 3-digit numbers never clip
+                    yaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(200, 200, 200, 0.2)',
+                        zeroline=False,
+                        tickformat=".1f"  # Formats cleanly as 6.0, 8.0, 10.0, 12.0
+                    ),
+                    xaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(200, 200, 200, 0.2)'
+                    ),
+                    height=380,
+                    template="plotly_white"
                 )
-                rco_curve_df.index.name = "Furnace COT (deg C)"
-                st.line_chart(rco_curve_df, color="#d62728")
-                st.caption("Demonstrates the reduction in residue distillate slippage as furnace thermal lift increases.")
+
+                st.plotly_chart(fig_rco, use_container_width=True)
 
                 # --------------------------------------------------------------
                 # PRODUCT YIELDS (6 CUTS WITH LPG) & GRAPHICAL OUTPUTS
