@@ -620,13 +620,19 @@ if page == "1. Model Training & DCS Upload":
     detected_flows = []
     flow_priority_patterns = ['offgas', 'lpg', 'naphtha', 'nap', 'kero', 'lago', 'hago', 'residue']
     for pattern in flow_priority_patterns:
-        matched = [c for c in df.columns if pattern in c.lower() and ('flow' in c.lower() or 'rate' in c.lower()) and c != detected_crude]
+        matched = [
+            c for c in df.columns 
+            if pattern in c.lower() 
+            and ('flow' in c.lower() or 'rate' in c.lower()) 
+            and '_pa_' not in c.lower() 
+            and 'top_pa' not in c.lower() 
+            and c != detected_crude
+        ]
         if matched and matched[0] not in detected_flows:
             detected_flows.append(matched[0])
 
     if not detected_flows:
         detected_flows = [c for c in ['flow_offgas', 'flow_lpg', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue'] if c in df.columns]
-
     default_inputs = [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow']
     default_states = [c for c in ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph'] if c in df.columns]
 
