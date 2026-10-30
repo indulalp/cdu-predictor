@@ -1095,10 +1095,36 @@ elif page == "2. Yield Prediction":
 
                 rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
                 st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT")
-                rco_curve_df = pd.DataFrame({
-                    "RCO Recovery @ 360°C (vol%)": pd.Series(rco_sweep_vals, dtype=float)
-                }, index=pd.Index(np.round(cot_sweep, 1), name="Furnace COT (°C)", dtype=float))
-                st.line_chart(rco_curve_df, color="#d62728")
+                
+                fig_rco = go.Figure()
+                fig_rco.add_trace(go.Scatter(
+                    x=np.round(cot_sweep, 1),
+                    y=np.round(rco_sweep_vals, 2),
+                    mode='lines',
+                    line=dict(color='#d62728', width=3),
+                    name='RCO Rec @ 360°C',
+                    hovertemplate='<b>Furnace COT</b>: %{x:.1f} °C<br><b>RCO Rec @ 360°C</b>: %{y:.2f} vol%<extra></extra>'
+                ))
+
+                fig_rco.update_layout(
+                    xaxis_title="Furnace COT (°C)",
+                    yaxis_title="RCO Recovery @ 360°C (vol%)",
+                    margin=dict(l=65, r=20, t=25, b=45),  # 65px left margin guarantees 2-digit & 3-digit numbers never clip
+                    yaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(200, 200, 200, 0.2)',
+                        zeroline=False,
+                        tickformat=".1f"  # Formats cleanly as 6.0, 8.0, 10.0, 12.0
+                    ),
+                    xaxis=dict(
+                        showgrid=True,
+                        gridcolor='rgba(200, 200, 200, 0.2)'
+                    ),
+                    height=380,
+                    template="plotly_white"
+                )
+
+                st.plotly_chart(fig_rco, use_container_width=True)
 
                 # --------------------------------------------------------------
                 # PRODUCT YIELDS (6 CUTS WITH LPG) & GRAPHICAL OUTPUTS
