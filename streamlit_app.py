@@ -356,11 +356,10 @@ def predict_yields_with_physics(yield_dict, X_df):
         + 0.85 * (api - baseline_stats.get('mean_api', 34.0))
     )
 
-    non_linear_severity = 18.0 * np.tanh(delta_severity / 12.0)
+    non_linear_severity = 10.0 * np.tanh(delta_severity / 6.0)
 
-    delta_residue = -0.00178 * non_linear_severity
-    delta_lago = 0.00158 * non_linear_severity
-
+    delta_residue = -0.00320 * non_linear_severity
+    delta_lago = 0.00295 * non_linear_severity
     final_yields = base_yields.copy()
     for i, col in enumerate(flow_targets):
         if col == 'flow_residue':
