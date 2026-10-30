@@ -1166,14 +1166,31 @@ elif page == "3. Protected Workspace & History":
     st.header(f"🔒 Protected Workspace: `{st.session_state['username']}`")
     conn = get_db_connection()
     tab_my_models, tab_my_sims = st.tabs(["📁 My Saved Models", "📜 My Simulation History"])
+    
     with tab_my_models:
         st.subheader("Your Isolated Models")
-        my_models = pd.read_sql_query("SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC", conn, params=(st.session_state['username'],))
-        st.dataframe(my_models, use_container_width=True) if not my_models.empty else st.info("No saved models.")
+        my_models = pd.read_sql_query(
+            "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC", 
+            conn, 
+            params=(st.session_state['username'],)
+        )
+        if not my_models.empty:
+            st.dataframe(my_models, use_container_width=True)
+        else:
+            st.info("No saved models found in your private vault.")
+            
     with tab_my_sims:
         st.subheader("Your Saved Simulations")
-        my_sims = pd.read_sql_query("SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC", conn, params=(st.session_state['username'],))
-        st.dataframe(my_sims, use_container_width=True) if not my_sims.empty else st.info("No simulations on record.")
+        my_sims = pd.read_sql_query(
+            "SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC", 
+            conn, 
+            params=(st.session_state['username'],)
+        )
+        if not my_sims.empty:
+            st.dataframe(my_sims, use_container_width=True)
+        else:
+            st.info("No simulations recorded yet.")
+            
     conn.close()
 
 # ==============================================================================
