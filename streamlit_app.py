@@ -340,26 +340,7 @@ def predict_yields_with_physics(yield_dict, X_df):
     flow_targets = yield_dict['flow_targets']
     baseline_stats = yield_dict['baseline_stats']
 
-    # Guarantee column alignment and order matching the fitted scaler
-    if hasattr(scaler, "feature_names_in_"):
-        expected_cols = list(scaler.feature_names_in_)
-        # Build an aligned DataFrame filling any missing tag with baseline mean
-        aligned_df = pd.DataFrame(index=X_df.index)
-        for col in expected_cols:
-            if col in X_df.columns:
-                aligned_df[col] = pd.to_numeric(X_df[col], errors='coerce')
-            else:
-                # Handle spaces vs underscores (e.g., 'flow rate' vs 'flow_rate')
-                alt = col.replace('_', ' ') if '_' in col else col.replace(' ', '_')
-                if alt in X_df.columns:
-                    aligned_df[col] = pd.to_numeric(X_df[alt], errors='coerce')
-                else:
-                    aligned_df[col] = baseline_stats.get(f'mean_{col}', 0.0)
-        X_eval = aligned_df[expected_cols]
-    else:
-        X_eval = X_df
-
-    X_scaled = scaler.transform(X_eval)
+    X_scaled = scaler.transform(X_df)
     ml_preds = ml_model.predict(X_scaled)
     linear_preds = softmax(linear_reg.predict(X_scaled))
     base_yields = 0.70 * ml_preds + 0.30 * linear_preds
