@@ -29,18 +29,16 @@ GUEST_MODEL_FILE = "models/guest_model.pkl"
 YIELD_BOUNDS = {
     'flow_offgas': (0.0005, 0.050),
     'flow_lpg': (0.0010, 0.040),
-    'flow_LPG': (0.0010, 0.040),
-    'flow_naphtha': (0.050, 0.300),   # Accommodates full 250-430 t/h operational range
-    'flow_kero': (0.020, 0.150),
-    'flow_lago': (0.120, 0.350),      # Total atmospheric gas oil fraction
-    'flow_residue': (0.350, 0.650)
+    'flow_naphtha': (0.100, 0.230),   # Accommodates full 250-430 t/h operational range
+    'flow_kero': (0.010, 0.080),
+    'flow_lago': (0.150, 0.350),      # Total atmospheric gas oil fraction
+    'flow_residue': (0.400, 0.650)
 }
 
 # Thermodynamic zero-sum slopes: Lift exchanges between Residue and LAGO; lights remain flat
 PHYSICS_SLOPES = {
     'flow_offgas': 0.00001,
     'flow_lpg': 0.00002,
-    'flow_LPG': 0.00002,
     'flow_naphtha': 0.00005,
     'flow_kero': 0.00012,
     'flow_lago': 0.00158,     # Primary receiver of thermal lift
@@ -608,14 +606,14 @@ if page == "1. Model Training & DCS Upload":
         df['crude_api'] = df[dens_cols[0]].apply(density_to_api)
         st.success(f"Calculated `crude_api` automatically from `{dens_cols[0]}`")
 
-    # 1. Robust Crude Inlet Tag Detection (Prioritize flow rate / crude flow, avoid quality columns)
+    # 1. Robust Crude Inlet Tag Detection (Prioritize plant rate and skip quality targets)
     detected_crude = None
     for cand in ['flow_rate', 'crude_flow', 'flow rate', 'feed_flow', 'crude_rate']:
         matches = [c for c in df.columns if c.strip().lower() == cand.lower()]
         if matches:
             detected_crude = matches[0]
             break
-            
+    
     if not detected_crude:
         for c in df.columns:
             c_low = c.strip().lower()
@@ -626,43 +624,45 @@ if page == "1. Model Training & DCS Upload":
     if not detected_crude:
         detected_crude = df.columns[1] if len(df.columns) > 1 else df.columns[0]
 
+    # 2. Target candidate detection
     rco_target_candidates = [c for c in df.columns if 'rco' in str(c).lower() or '360' in str(c).lower()]
     default_rco_col = rco_target_candidates[0] if rco_target_candidates else None
 
-    c1, c2, c3 = st.columns(3)
-    
-    # 2. Strict inputs list: Exclude target and pumparounds
+    # 3. Clean inputs (Strictly exclude RCO quality target from inputs)
     clean_default_inputs = [c for c in [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow'] if c in df.columns]
-    input_cols = c1.multiselect(
-        "Inputs (X)", 
-        list(df.columns), 
-        default=clean_default_inputs,
-        key="inputs_multiselect_v3"
-    )
 
-    # 3. Strict Product Cuts (Y1): Banish all pumparounds (_pa, top_pa)
+    # 4. Strict Product Cuts (Pumparounds are strictly banned from Y1)
     valid_product_cuts = [
         c for c in df.columns 
         if any(cut in c.lower() for cut in ['offgas', 'lpg', 'naphtha', 'nap', 'kero', 'lago', 'hago', 'residue'])
         and not any(pa in c.lower() for pa in ['_pa', 'top_pa', 'reflux'])
         and c != detected_crude
     ]
+    if not valid_product_cuts:
+        valid_product_cuts = [c for c in ['flow_offgas', 'flow_lpg', 'flow_LPG', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue'] if c in df.columns]
+
+    # 5. Internal states strictly for Y2
+    default_states = [c for c in ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph'] if c in df.columns]
+
+    c1, c2, c3 = st.columns(3)
+    input_cols = c1.multiselect(
+        "Inputs (X)", 
+        list(df.columns), 
+        default=clean_default_inputs,
+        key="inputs_multiselect_v3"
+    )
     flow_cols = c2.multiselect(
         "Product Flows (Y1) [Includes LPG]", 
         list(df.columns), 
         default=valid_product_cuts,
         key="flow_cols_multiselect_v3"
     )
-
-    # 4. Internal states & pumparounds strictly in Y2
-    default_states = [c for c in ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph'] if c in df.columns]
     state_cols = c3.multiselect(
         "Predicted States & Qualities (Y2)", 
         list(df.columns), 
         default=default_states,
         key="states_multiselect_v3"
     )
-
     crude_col = c1.selectbox(
         "Crude Inlet Flow Tag", 
         list(df.columns), 
@@ -926,7 +926,6 @@ elif page == "2. Yield Prediction":
                         label_map = {
                             'flow_offgas': 'Pred_OffGas_tph',
                             'flow_lpg': 'Pred_LPG_tph',
-                            'flow_LPG': 'Pred_LPG_tph',
                             'flow_naphtha': 'Pred_Naphtha_tph',
                             'flow_kero': 'Pred_Kero_tph',
                             'flow_lago': 'Pred_LAGO_tph',
@@ -1050,4 +1049,164 @@ elif page == "2. Yield Prediction":
 
                             st.session_state['active_df'] = pd.concat([st.session_state.get('active_df', get_demo_dataframe()), pd.DataFrame([new_row])], ignore_index=True)
                             updated_df = st.session_state['active_df']
-                            new_model, new_feats, new_bounds, new_r2 = build_and
+                            new_model, new_feats, new_bounds, new_r2 = build_and_fit_rco_model(updated_df[input_cols], updated_df['rco_rec_360'])
+
+                            active_pipeline["rco_model"] = new_model
+                            active_pipeline["rco_bounds"] = new_bounds
+                            active_pipeline["rco_r2"] = new_r2
+                            joblib.dump(active_pipeline, GUEST_MODEL_FILE)
+                            sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, f"Active Learning: Added run with lab RCO={lab_rco_val}")
+                            st.success(f"✅ Success! Ingested new run into dataset (Total points: **{len(updated_df)}**). Model updated (R² = {new_r2:.3f}).")
+                            st.rerun()
+
+                # --------------------------------------------------------------
+                # RCO RECOVERY & STRIPPING METRICS
+                # --------------------------------------------------------------
+                st.divider()
+                st.subheader("🧪 Atmospheric Residue (RCO) Recovery @ 360°C")
+                r_col1, r_col2, r_col3 = st.columns([1.2, 1.8, 1.2])
+                r_col1.metric("Predicted RCO Rec @ 360°C", f"{pred_rco_rec_360:.2f} vol%")
+                r_col1.caption(f"Gradient Boosted Accuracy: R² = {rco_r2_val:.3f}")
+
+                cot_current = float(eval_inputs.get('cot_degC', 350.12))
+                steam_current = float(eval_inputs.get('stripping_steam_flow', 13.20))
+                steam_ratio = (steam_current / crude_in) * 1000.0
+
+                sep_status = "🟢 Deep Cut / Minimal Slippage" if pred_rco_rec_360 <= 5.0 else ("🟡 Standard Operational Stripping" if pred_rco_rec_360 <= 7.5 else "🔴 High Distillate Loss in Residue")
+                r_col2.metric("Stripping Status", sep_status)
+                r_col3.metric("Stripping Steam Ratio", f"{steam_ratio:.2f} kg/t crude")
+
+                # Standalone RCO Curve Sweep
+                base_cot = float(eval_inputs.get('cot_degC', stats['mean_cot']))
+                cot_sweep = np.linspace(base_cot - 15.0, base_cot + 15.0, 31)
+                rco_sweep_vals = []
+                yield_sweep_vals = []
+
+                for temp in cot_sweep:
+                    temp_input = eval_inputs.copy()
+                    temp_input['cot_degC'] = temp
+                    temp_df = pd.DataFrame([temp_input])
+                    rco_val = float(predict_rco_with_physics_anchor(rco_model, rco_feats, rco_bounds, temp_df)[0]) if rco_model is not None else 6.30
+                    rco_sweep_vals.append(rco_val)
+                    yield_sweep_vals.append(predict_yields_with_physics(active_pipeline["yield_model_dict"], temp_df)[0] * 100.0)
+
+                rco_sweep_vals = list(np.minimum.accumulate(rco_sweep_vals))
+                st.markdown("#### 📈 RCO Recovery @ 360°C vs Furnace COT")
+                rco_curve_df = pd.DataFrame({"RCO Rec @ 360 deg C (vol%)": rco_sweep_vals}, index=np.round(cot_sweep, 1))
+                rco_curve_df.index.name = "Furnace COT (deg C)"
+                st.line_chart(rco_curve_df, color="#d62728")
+
+                # --------------------------------------------------------------
+                # PRODUCT YIELDS (6 CUTS WITH LPG) & GRAPHICAL OUTPUTS
+                # --------------------------------------------------------------
+                st.divider()
+                c_left, c_right = st.columns(2)
+                with c_left:
+                    st.subheader("📦 Product Recovery Yields (6 Cuts)")
+                    st.table(pd.DataFrame({
+                        "Cut Stream": flow_targets,
+                        "Yield (wt%)": [f"{y*100:.2f}%" for y in norm_yields],
+                        "Rate (t/h)": [f"{f:.2f}" for f in pred_flows]
+                    }))
+                    st.metric("Total Mass Out", f"{np.sum(pred_flows):.2f} t/h")
+
+                with c_right:
+                    st.subheader("🌡️ Predicted States & Qualities")
+                    formatted_states = [f"{v:.2f} °C" if "temp" in n.lower() or "d86" in n.lower() else f"{v:.2f} t/h" for n, v in zip(state_targets, pred_states)]
+                    st.table(pd.DataFrame({
+                        "Parameter / Cut Quality": state_targets,
+                        "Predicted Value": formatted_states
+                    }))
+
+                st.divider()
+                st.subheader("📊 Product Yield Analytics & Dynamic Curves (with LPG)")
+
+                label_map = {
+                    'flow_offgas': 'Off-Gas',
+                    'flow_lpg': 'LPG',
+                    'flow_naphtha': 'Naphtha',
+                    'flow_kero': 'Kerosene',
+                    'flow_lago': 'LAGO',
+                    'flow_residue': 'Atm. Residue'
+                }
+                display_labels = [label_map.get(col, col) for col in flow_targets]
+
+                plot_df = pd.DataFrame({
+                    "Product Cut": display_labels,
+                    "Mass Flow (t/h)": pred_flows,
+                    "Yield Share (%)": norm_yields * 100.0
+                })
+
+                g_col1, g_col2 = st.columns(2)
+                with g_col1:
+                    st.markdown("**Mass Recovery by Product Cut (t/h)**")
+                    st.bar_chart(plot_df.set_index("Product Cut")[["Mass Flow (t/h)"]], color="#0066cc")
+
+                with g_col2:
+                    st.markdown("**Yield Fraction Breakdown (% Recovery)**")
+                    st.bar_chart(plot_df.set_index("Product Cut")[["Yield Share (%)"]], color="#ff7f0e")
+
+                st.markdown("#### 📈 Dynamic Distillate Cut Yield Curves (Yield % vs COT)")
+                sensitivity_df = pd.DataFrame(
+                    np.array(yield_sweep_vals), 
+                    columns=display_labels, 
+                    index=np.round(cot_sweep, 1)
+                )
+                sensitivity_df.index.name = "Furnace COT (deg C)"
+                st.line_chart(sensitivity_df)
+                st.caption("Demonstrates stable mass fractionation across all cuts: Off-Gas and LPG remain flat, while non-linear lift exchanges between Residue and LAGO.")
+
+# ==============================================================================
+# PAGE 3: PROTECTED WORKSPACE
+# ==============================================================================
+elif page == "3. Protected Workspace & History":
+    st.header(f"🔒 Protected Workspace: `{st.session_state['username']}`")
+    conn = get_db_connection()
+    tab_my_models, tab_my_sims = st.tabs(["📁 My Saved Models", "📜 My Simulation History"])
+    with tab_my_models:
+        st.subheader("Your Isolated Models")
+        my_models = pd.read_sql_query("SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC", conn, params=(st.session_state['username'],))
+        st.dataframe(my_models, use_container_width=True) if not my_models.empty else st.info("No saved models.")
+    with tab_my_sims:
+        st.subheader("Your Saved Simulations")
+        my_sims = pd.read_sql_query("SELECT timestamp, inputs_json, outputs_json FROM simulation_history WHERE username = ? ORDER BY timestamp DESC", conn, params=(st.session_state['username'],))
+        st.dataframe(my_sims, use_container_width=True) if not my_sims.empty else st.info("No simulations on record.")
+    conn.close()
+
+# ==============================================================================
+# PAGE 4: ADMIN GOVERNANCE & TELEMETRY
+# ==============================================================================
+elif page == "🛡️ Admin Audit & Telemetry":
+    st.header("🛡️ Enterprise Client Governance & Audit Portal")
+    conn = get_db_connection()
+    tab_manage, tab_client_inspect, tab_logs = st.tabs(["👥 Client Provisioning", "🔍 Inspect Clients", "📍 Access Telemetry"])
+
+    with tab_manage:
+        st.subheader("Create Client Account")
+        c_u1, c_u2, c_u3 = st.columns([2, 2, 1])
+        new_client_user = c_u1.text_input("Username")
+        new_client_pass = c_u2.text_input("Password")
+        if c_u3.button("Create", type="primary") and new_client_user and new_client_pass:
+            ok, msg = create_client_user(new_client_user, new_client_pass)
+            st.success(msg) if ok else st.error(msg)
+            if ok:
+                st.rerun()
+
+        st.divider()
+        users_df = pd.read_sql_query("SELECT username, role FROM users ORDER BY role ASC, username ASC", conn)
+        st.dataframe(users_df, use_container_width=True)
+
+    with tab_client_inspect:
+        st.subheader("Client Models & Audit")
+        all_clients = [u for u in users_df["username"].tolist() if u != "admin"]
+        if all_clients:
+            chosen_user = st.selectbox("Select Client:", options=all_clients)
+            c_mods = pd.read_sql_query("SELECT id, model_tag, training_rows, created_at FROM protected_models WHERE username = ?", conn, params=(chosen_user,))
+            st.dataframe(c_mods, use_container_width=True)
+
+    with tab_logs:
+        st.subheader("Global Geolocation Telemetry")
+        access_df = pd.read_sql_query("SELECT username, login_time, ip_address, city, region, country FROM access_logs ORDER BY login_time DESC", conn)
+        st.dataframe(access_df, use_container_width=True)
+
+    conn.close()
