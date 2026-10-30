@@ -1160,7 +1160,7 @@ elif page == "2. Yield Prediction":
                 st.caption("Demonstrates stable mass fractionation across all cuts: Off-Gas and LPG remain flat, while non-linear lift exchanges between Residue and LAGO.")
 
 # ==============================================================================
-# PAGE 3: PROTECTED WORKSPACE
+# PAGE 3: PROTECTED WORKSPACE & HISTORY (WITH CLIENT MODEL MANAGEMENT)
 # ==============================================================================
 elif page == "3. Protected Workspace & History":
     st.header(f"🔒 Protected Workspace: `{st.session_state['username']}`")
@@ -1170,12 +1170,56 @@ elif page == "3. Protected Workspace & History":
     with tab_my_models:
         st.subheader("Your Isolated Models")
         my_models = pd.read_sql_query(
-            "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY created_at DESC", 
+            "SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY id DESC", 
             conn, 
             params=(st.session_state['username'],)
         )
+        
         if not my_models.empty:
-            st.dataframe(my_models, use_container_width=True)
+            # Display clean summary table (excluding internal file path)
+            st.dataframe(my_models[["id", "model_tag", "training_rows", "created_at"]], use_container_width=True)
+            
+            st.divider()
+            st.markdown("#### 🗑️ Delete a Saved Model")
+            del_c1, del_c2 = st.columns([3, 1])
+            
+            # Map unique identifier and labels
+            client_model_map = {
+                f"ID {row['id']} — Tag: {row['model_tag']} (Trained on: {row['created_at']})": (row['id'], row['model_path'], row['model_tag'])
+                for _, row in my_models.iterrows()
+            }
+            
+            chosen_model_label = del_c1.selectbox(
+                "Select Model to Delete:", 
+                options=list(client_model_map.keys()),
+                key="client_del_model_select"
+            )
+            
+            with del_c2:
+                st.markdown("<div style='height: 28px;'></div>", unsafe_allow_html=True)
+                delete_btn = st.button("🗑️ Delete Selected Model", type="primary", use_container_width=True)
+                
+            if delete_btn:
+                target_id, target_path, target_tag = client_model_map[chosen_model_label]
+                
+                # 1. Unlink physical pickle artifact from the server filesystem
+                if target_path and os.path.exists(target_path):
+                    try:
+                        os.remove(target_path)
+                    except Exception as err:
+                        st.warning(f"Note: Local file cleanup reported: {err}")
+                
+                # 2. Delete database entry strictly scoped to current logged-in user
+                conn.execute(
+                    "DELETE FROM protected_models WHERE id = ? AND username = ?", 
+                    (target_id, st.session_state['username'])
+                )
+                conn.commit()
+                
+                # 3. Synchronise the updated SQLite database with GitHub
+                sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: User {st.session_state['username']} deleted model ID {target_id}")
+                st.success(f"Model `{target_tag}` (ID: {target_id}) was permanently deleted.")
+                st.rerun()
         else:
             st.info("No saved models found in your private vault.")
             
