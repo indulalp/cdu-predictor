@@ -638,7 +638,13 @@ if page == "1. Model Training & DCS Upload":
 
     c1, c2, c3 = st.columns(3)
     input_cols = c1.multiselect("Inputs (X)", list(df.columns), default=[c for c in default_inputs if c in df.columns])
-    flow_cols = c2.multiselect("Product Flows (Y1) [Includes LPG]", list(df.columns), default=detected_flows)
+    valid_product_cuts = [c for c in ['flow_offgas', 'flow_lpg', 'flow_LPG', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue'] if c in df.columns]
+    flow_cols = c2.multiselect(
+        "Product Flows (Y1) [Includes LPG]", 
+        list(df.columns), 
+        default=valid_product_cuts,
+        key="flow_cols_multiselect_v2"
+    )
     state_cols = c3.multiselect("Predicted States & Qualities (Y2)", list(df.columns), default=default_states)
     crude_col = c1.selectbox("Crude Inlet Flow Tag", list(df.columns), index=list(df.columns).index(detected_crude) if detected_crude in list(df.columns) else 0)
     
