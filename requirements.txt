@@ -4,7 +4,11 @@ numpy
 scikit-learn
 lightgbm
 joblib
+plotly
 requests
 openpyxl
 pyarrow
 PyGithub
+
+
+
