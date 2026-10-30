@@ -1175,33 +1175,101 @@ elif page == "3. Protected Workspace & History":
 # ==============================================================================
 # PAGE 4: ADMIN GOVERNANCE & TELEMETRY
 # ==============================================================================
+# ==============================================================================
+# PAGE 4: ADMIN GOVERNANCE & TELEMETRY
+# ==============================================================================
 elif page == "🛡️ Admin Audit & Telemetry":
     st.header("🛡️ Enterprise Client Governance & Audit Portal")
     conn = get_db_connection()
-    tab_manage, tab_client_inspect, tab_logs = st.tabs(["👥 Client Provisioning", "🔍 Inspect Clients", "📍 Access Telemetry"])
+    tab_manage, tab_client_inspect, tab_logs = st.tabs(["👥 Client Provisioning & Management", "🔍 Inspect & Delete Client Models", "📍 Access Telemetry"])
 
     with tab_manage:
         st.subheader("Create Client Account")
         c_u1, c_u2, c_u3 = st.columns([2, 2, 1])
-        new_client_user = c_u1.text_input("Username")
-        new_client_pass = c_u2.text_input("Password")
-        if c_u3.button("Create", type="primary") and new_client_user and new_client_pass:
+        new_client_user = c_u1.text_input("Username", key="new_client_u_admin")
+        new_client_pass = c_u2.text_input("Password", type="password", key="new_client_p_admin")
+        if c_u3.button("Create Account", type="primary") and new_client_user and new_client_pass:
             ok, msg = create_client_user(new_client_user, new_client_pass)
             st.success(msg) if ok else st.error(msg)
             if ok:
                 st.rerun()
 
         st.divider()
+        st.subheader("Manage Existing Client Accounts")
         users_df = pd.read_sql_query("SELECT username, role FROM users ORDER BY role ASC, username ASC", conn)
-        st.dataframe(users_df, use_container_width=True)
+        
+        c_list1, c_list2 = st.columns([3, 2])
+        with c_list1:
+            st.markdown("**Registered Users List**")
+            st.dataframe(users_df, use_container_width=True)
+
+        # Action box: Delete Client or Reset Password
+        non_admin_users = [u for u in users_df["username"].tolist() if u != "admin"]
+        with c_list2:
+            st.markdown("**Account Actions**")
+            if non_admin_users:
+                selected_user = st.selectbox("Select Client to Manage:", options=non_admin_users, key="select_user_action")
+                
+                # Reset Password
+                new_pwd = st.text_input("New Password", type="password", key="admin_reset_pwd_val")
+                if st.button("🔑 Reset Client Password"):
+                    if new_pwd.strip():
+                        reset_client_password(selected_user, new_pwd)
+                        st.success(f"Password reset for `{selected_user}`.")
+                    else:
+                        st.warning("Please enter a new password.")
+                
+                st.write("")
+                # Delete Client and all their data
+                confirm_del = st.checkbox(f"Confirm deletion of `{selected_user}` and all associated models", key="chk_del_user")
+                if st.button("🗑️ Delete Client Account", type="secondary", disabled=not confirm_del):
+                    # Fetch all model files on disk to clean them up
+                    c_models = conn.execute("SELECT model_path FROM protected_models WHERE username = ?", (selected_user,)).fetchall()
+                    for m_row in c_models:
+                        if m_row[0] and os.path.exists(m_row[0]):
+                            try:
+                                os.remove(m_row[0])
+                            except Exception:
+                                pass
+                    delete_client_user(selected_user)
+                    st.success(f"Client `{selected_user}` and all their models have been permanently removed.")
+                    st.rerun()
+            else:
+                st.info("No non-admin client accounts present.")
 
     with tab_client_inspect:
-        st.subheader("Client Models & Audit")
+        st.subheader("Inspect & Delete Client Vault Models")
         all_clients = [u for u in users_df["username"].tolist() if u != "admin"]
         if all_clients:
-            chosen_user = st.selectbox("Select Client:", options=all_clients)
-            c_mods = pd.read_sql_query("SELECT id, model_tag, training_rows, created_at FROM protected_models WHERE username = ?", conn, params=(chosen_user,))
-            st.dataframe(c_mods, use_container_width=True)
+            chosen_inspect_user = st.selectbox("Select Client to Inspect Models:", options=all_clients, key="inspect_client_select")
+            c_mods = pd.read_sql_query("SELECT id, model_tag, training_rows, created_at, model_path FROM protected_models WHERE username = ? ORDER BY id DESC", conn, params=(chosen_inspect_user,))
+            
+            if not c_mods.empty:
+                st.dataframe(c_mods, use_container_width=True)
+                
+                st.markdown("#### Delete Individual Model Artifact")
+                del_mod_col1, del_mod_col2 = st.columns([3, 1])
+                mod_options = {f"{row['model_tag']} (ID: {row['id']})": (row['id'], row['model_path']) for _, row in c_mods.iterrows()}
+                chosen_mod_label = del_mod_col1.selectbox("Select Model to Delete:", options=list(mod_options.keys()))
+                
+                if del_mod_col2.button("🗑️ Delete Model"):
+                    mod_id, mod_path = mod_options[chosen_mod_label]
+                    # Remove from disk if present
+                    if mod_path and os.path.exists(mod_path):
+                        try:
+                            os.remove(mod_path)
+                        except Exception:
+                            pass
+                    # Remove from DB
+                    conn.execute("DELETE FROM protected_models WHERE id = ?", (mod_id,))
+                    conn.commit()
+                    sync_file_to_github(DB_PATH, DB_PATH, f"Auto-sync: Deleted model ID {mod_id}")
+                    st.success(f"Deleted `{chosen_mod_label}` successfully.")
+                    st.rerun()
+            else:
+                st.info(f"No models saved by `{chosen_inspect_user}`.")
+        else:
+            st.info("No client accounts found.")
 
     with tab_logs:
         st.subheader("Global Geolocation Telemetry")
