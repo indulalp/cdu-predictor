@@ -677,7 +677,21 @@ if page == "1. Model Training & DCS Upload":
         c for c in ['top_temp_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph'] 
         if c in df.columns and 'd86' not in c.lower()
     ]
-
+# Allow full visibility and wrapping of multi-select pill tags
+    st.markdown("""
+        <style>
+            div[data-baseweb="select"] > div {
+                flex-wrap: wrap !important;
+                overflow-x: auto !important;
+                max-height: 120px !important;
+                overflow-y: auto !important;
+            }
+            div[data-baseweb="tag"] {
+                margin: 2px !important;
+            }
+        </style>
+    """, unsafe_allow_html=True)
+    
     c1, c2, c3 = st.columns(3)
     input_cols = c1.multiselect(
         "Inputs (X)", 
