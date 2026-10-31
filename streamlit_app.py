@@ -706,7 +706,7 @@ if page == "1. Model Training & DCS Upload":
 
             total_out = clean_df[flow_cols].sum(axis=1)
             imbalance = np.abs(total_out - crude_series) / crude_series.replace(0, np.nan)
-            valid_mask = imbalance.fillna(1.0) < 0.25
+            valid_mask = imbalance.fillna(1.0) < 0.05
             valid_df = clean_df[valid_mask].copy().reset_index(drop=True)
 
             if valid_df.empty:
