@@ -329,18 +329,31 @@ def softmax(x):
     return e_x / np.sum(e_x, axis=-1, keepdims=True)
 
 def predict_yields_with_physics(yield_dict, X_df):
-    """
-    Natively picklable physics-informed multi-cut yield prediction function.
-    Eliminates _pickle.PicklingError while guaranteeing mass conservation.
-    Includes calibrated thermodynamic saturation inflection knee (tau = 6.0).
-    """
     scaler = yield_dict['scaler']
     ml_model = yield_dict['ml_model']
     linear_reg = yield_dict['linear_reg']
     flow_targets = yield_dict['flow_targets']
     baseline_stats = yield_dict['baseline_stats']
 
-    X_scaled = scaler.transform(X_df)
+    # Strictly align input columns with what the scaler expects
+    if hasattr(scaler, "feature_names_in_"):
+        expected_cols = list(scaler.feature_names_in_)
+        aligned_df = pd.DataFrame(index=X_df.index)
+        for col in expected_cols:
+            if col in X_df.columns:
+                aligned_df[col] = X_df[col]
+            else:
+                # Handle space vs underscore or case variations
+                match = [c for c in X_df.columns if c.strip().lower().replace(" ", "_") == col.strip().lower().replace(" ", "_")]
+                if match:
+                    aligned_df[col] = X_df[match[0]]
+                else:
+                    aligned_df[col] = baseline_stats.get(f'mean_{col}', 0.0)
+        X_eval = aligned_df[expected_cols]
+    else:
+        X_eval = X_df
+
+    X_scaled = scaler.transform(X_eval)
     ml_preds = ml_model.predict(X_scaled)
     linear_preds = softmax(linear_reg.predict(X_scaled))
     base_yields = 0.70 * ml_preds + 0.30 * linear_preds
