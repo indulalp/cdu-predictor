@@ -661,18 +661,22 @@ if page == "1. Model Training & DCS Upload":
     # 3. Clean inputs (Strictly exclude RCO quality target from inputs)
     clean_default_inputs = [c for c in [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow'] if c in df.columns]
 
-    # 4. Strict Product Cuts (Pumparounds are strictly banned from Y1)
+    # 4. Strict Product Cuts: Exclude pumparounds, quality tags (D86, ASTM, temp), and crude tag
+    banned_y1_keywords = ['_pa', 'top_pa', 'reflux', 'd86', 'astm', 'degc', 'temp', 'density', 'api', 'rec_360']
     valid_product_cuts = [
         c for c in df.columns 
         if any(cut in c.lower() for cut in ['offgas', 'lpg', 'naphtha', 'nap', 'kero', 'lago', 'hago', 'residue'])
-        and not any(pa in c.lower() for pa in ['_pa', 'top_pa', 'reflux'])
+        and not any(ban in c.lower() for ban in banned_y1_keywords)
         and c != detected_crude
     ]
     if not valid_product_cuts:
-        valid_product_cuts = [c for c in ['flow_offgas', 'flow_lpg', 'flow_LPG', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue'] if c in df.columns]
+        valid_product_cuts = [c for c in ['flow_offgas', 'flow_lpg', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue'] if c in df.columns]
 
-    # 5. Internal states strictly for Y2
-    default_states = [c for c in ['top_temp_degC', 'lago_d86_95_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph'] if c in df.columns]
+    # 5. Internal states strictly for Y2 (Completely excluding lago_d86_95_degC)
+    default_states = [
+        c for c in ['top_temp_degC', 'top_pa', 'kero_pa_flow_tph', 'lago_pa_flow_tph'] 
+        if c in df.columns and 'd86' not in c.lower()
+    ]
 
     c1, c2, c3 = st.columns(3)
     input_cols = c1.multiselect(
