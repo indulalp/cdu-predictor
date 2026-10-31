@@ -1170,7 +1170,7 @@ elif page == "2. Yield Prediction":
                         "Predicted Value": [item[1] for item in filtered_display_states]
                     }))
                 st.divider()
-                st.subheader("📊 Product Yield Analytics & Dynamic Curves (with LPG)")
+                st.subheader("📊 Product Yield Analytics & Dynamic Curves")
 
                 label_map = {
                     'flow_offgas': 'Off-Gas',
