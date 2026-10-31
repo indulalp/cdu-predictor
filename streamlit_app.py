@@ -1007,7 +1007,22 @@ elif page == "2. Yield Prediction":
                 crude_in = eval_inputs.get(crude_tag, crude_in_val)
                 pred_flows = norm_yields * crude_in
 
-                scaled_state = active_pipeline["scaler_states"].transform(input_df)
+                # Align columns for scaler_states
+                st_scaler = active_pipeline["scaler_states"]
+                if hasattr(st_scaler, "feature_names_in_"):
+                    expected_st_cols = list(st_scaler.feature_names_in_)
+                    aligned_st_df = pd.DataFrame(index=input_df.index)
+                    for col in expected_st_cols:
+                        if col in input_df.columns:
+                            aligned_st_df[col] = input_df[col]
+                        else:
+                            match = [c for c in input_df.columns if c.strip().lower().replace(" ", "_") == col.strip().lower().replace(" ", "_")]
+                            aligned_st_df[col] = input_df[match[0]] if match else stats.get(f'mean_{col}', 0.0)
+                    X_state_eval = aligned_st_df[expected_st_cols]
+                else:
+                    X_state_eval = input_df
+
+                scaled_state = st_scaler.transform(X_state_eval)
                 pred_states = active_pipeline["model_states"].predict(scaled_state)[0]
 
                 cot_delta = eval_inputs.get('cot_degC', 350.0) - stats['mean_cot']
