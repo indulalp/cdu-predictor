@@ -424,7 +424,22 @@ def build_and_fit_rco_model(X, y):
 
 def predict_rco_with_physics_anchor(model, feature_names, bounds, X_df):
     active_slopes = get_calibrated_slopes()
-    X_eval = X_df[feature_names].copy().reset_index(drop=True)
+    
+    # Safely align columns and fallback if any feature name or casing differs
+    aligned_df = pd.DataFrame(index=X_df.index)
+    for col in feature_names:
+        if col in X_df.columns:
+            aligned_df[col] = X_df[col]
+        else:
+            match = [c for c in X_df.columns if c.strip().lower().replace(" ", "_") == col.strip().lower().replace(" ", "_")]
+            if match:
+                aligned_df[col] = X_df[match[0]]
+            elif col in bounds:
+                aligned_df[col] = (bounds[col][0] + bounds[col][1]) / 2.0
+            else:
+                aligned_df[col] = 0.0
+
+    X_eval = aligned_df[feature_names].copy().reset_index(drop=True)
     tree_preds = model.predict(X_eval)
     final_preds = []
     for idx, row in X_eval.iterrows():
