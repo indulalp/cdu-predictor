@@ -790,13 +790,13 @@ if page == "1. Model Training & DCS Upload":
             else:
                 joblib.dump(pipeline, GUEST_MODEL_FILE)
                 sync_file_to_github(GUEST_MODEL_FILE, GUEST_MODEL_FILE, "Auto-sync: Updated 6-cut guest model with LPG")
-                st.success(f"🌐 6-Cut digital twin (with LPG) calibrated and synced. RCO Model R² = {rco_r2:.3f}")
+                st.success(f"🌐 6-Cut digital twin calibrated and synced. RCO Model R² = {rco_r2:.3f}")
 
 # ==============================================================================
 # PAGE 2: REAL-TIME YIELD & AUTONOMOUS QUALITY PREDICTION
 # ==============================================================================
 elif page == "2. Yield Prediction":
-    st.header("🎯 Autonomous CDU Prediction & Dynamic Sensitivity (6-Cut Engine with LPG)")
+    st.header("🎯 Autonomous CDU Prediction & Dynamic Sensitivity (6-Cut Engine with LAGO,HAGO lumped)")
 
     active_pipeline = None
     if st.session_state["authenticated"]:
@@ -879,7 +879,7 @@ elif page == "2. Yield Prediction":
         # OPTION A: BATCH EVALUATION
         # --------------------------------------------------------------
         if pred_mode == "📂 Batch Upload (Excel / CSV)":
-            st.markdown("#### 📂 Upload Plant Dataset for Batch RCO & 6-Cut Yield Prediction (with LPG)")
+            st.markdown("#### 📂 Upload Plant Dataset for Batch RCO & 6-Cut Yield Prediction ")
             batch_file = st.file_uploader("Upload Plant Process Run Sheet", type=["csv", "xlsx"], key="batch_pred_uploader")
 
             if batch_file is not None:
