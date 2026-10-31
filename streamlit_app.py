@@ -1114,12 +1114,18 @@ elif page == "2. Yield Prediction":
 
                 with c_right:
                     st.subheader("🌡️ Predicted States & Qualities")
-                    formatted_states = [f"{v:.2f} °C" if "temp" in n.lower() or "d86" in n.lower() else f"{v:.2f} t/h" for n, v in zip(state_targets, pred_states)]
+                    
+                    # Filter out lago_d86_95_degC from UI display
+                    filtered_display_states = [
+                        (name, f"{val:.2f} °C" if "temp" in name.lower() or "d86" in name.lower() else f"{val:.2f} t/h")
+                        for name, val in zip(state_targets, pred_states)
+                        if "lago_d86" not in name.lower()
+                    ]
+                    
                     st.table(pd.DataFrame({
-                        "Parameter / Cut Quality": state_targets,
-                        "Predicted Value": formatted_states
+                        "Parameter / Cut Quality": [item[0] for item in filtered_display_states],
+                        "Predicted Value": [item[1] for item in filtered_display_states]
                     }))
-
                 st.divider()
                 st.subheader("📊 Product Yield Analytics & Dynamic Curves (with LPG)")
 
