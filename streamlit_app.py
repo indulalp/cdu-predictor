@@ -669,8 +669,29 @@ if page == "1. Model Training & DCS Upload":
         and not any(ban in c.lower() for ban in banned_y1_keywords)
         and c != detected_crude
     ]
-    if not valid_product_cuts:
-        valid_product_cuts = [c for c in ['flow_offgas', 'flow_lpg', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue'] if c in df.columns]
+    # 4. Strict Product Cuts: Exclude pumparounds and quality tags
+    banned_y1_keywords = ['_pa', 'top_pa', 'reflux', 'd86', 'astm', 'degc', 'temp', 'density', 'api', 'rec_360']
+    
+    # Target cuts in order of true boiling point
+    expected_cuts_keywords = ['offgas', 'lpg', 'naphtha', 'kero', 'lago', 'residue']
+    
+    valid_product_cuts = []
+    for kw in expected_cuts_keywords:
+        for c in df.columns:
+            c_low = c.strip().lower()
+            # Match keyword, avoid banned terms, and avoid crude flow tag
+            if kw in c_low and not any(ban in c_low for ban in banned_y1_keywords) and c != detected_crude:
+                if c not in valid_product_cuts:
+                    valid_product_cuts.append(c)
+                break  # Pick the first matching column for each cut
+
+    # Fallback if specific names are used
+    if len(valid_product_cuts) < 6:
+        standard_names = ['flow_offgas', 'flow_lpg', 'flow_LPG', 'flow_naphtha', 'flow_kero', 'flow_lago', 'flow_residue']
+        for sn in standard_names:
+            for c in df.columns:
+                if c.strip().lower() == sn.lower() and c not in valid_product_cuts and c != detected_crude:
+                    valid_product_cuts.append(c)
 
     # 5. Internal states strictly for Y2 (Completely excluding lago_d86_95_degC)
     default_states = [
