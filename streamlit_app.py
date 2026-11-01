@@ -666,9 +666,7 @@ if page == "1. Model Training & DCS Upload":
     valid_product_cuts = [
         c for c in df.columns 
         if any(cut in c.lower() for cut in ['offgas', 'lpg', 'naphtha', 'nap', 'kero', 'lago', 'hago', 'residue'])
-        and not any(ban in c.lower() for ban in banned_y1_keywords)
-        and c != detected_crude
-    ]
+        
     # 4. Strict Product Cuts: Exclude pumparounds and quality tags
     banned_y1_keywords = ['_pa', 'top_pa', 'reflux', 'd86', 'astm', 'degc', 'temp', 'density', 'api', 'rec_360']
     
