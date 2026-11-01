@@ -662,11 +662,7 @@ if page == "1. Model Training & DCS Upload":
     clean_default_inputs = [c for c in [detected_crude, 'crude_api', 'cot_degC', 'flash_zone_p_kgcm2', 'stripping_steam_flow'] if c in df.columns]
 
     # 4. Strict Product Cuts: Exclude pumparounds, quality tags (D86, ASTM, temp), and crude tag
-    banned_y1_keywords = ['_pa', 'top_pa', 'reflux', 'd86', 'astm', 'degc', 'temp', 'density', 'api', 'rec_360']
-    valid_product_cuts = [
-        c for c in df.columns 
-        if any(cut in c.lower() for cut in ['offgas', 'lpg', 'naphtha', 'nap', 'kero', 'lago', 'hago', 'residue'])
-        
+    
     # 4. Strict Product Cuts: Exclude pumparounds and quality tags
     banned_y1_keywords = ['_pa', 'top_pa', 'reflux', 'd86', 'astm', 'degc', 'temp', 'density', 'api', 'rec_360']
     
