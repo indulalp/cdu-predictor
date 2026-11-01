@@ -1138,6 +1138,56 @@ elif page == "2. Yield Prediction":
                 sep_status = "🟢 Deep Cut / Minimal Slippage" if pred_rco_rec_360 <= 5.0 else ("🟡 Standard Operational Stripping" if pred_rco_rec_360 <= 7.5 else "🔴 High Distillate Loss in Residue")
                 r_col2.metric("Stripping Status", sep_status)
                 r_col3.metric("Stripping Steam Ratio", f"{steam_ratio:.2f} kg/t crude")
+                # --------------------------------------------------------------
+                # OPERATIONAL DIAGNOSTIC & SETPOINT SUGGESTIONS
+                # --------------------------------------------------------------
+                st.markdown("#### 🛠️ Operational Diagnostics & Setpoint Advisory")
+                
+                diag_col1, diag_col2 = st.columns(2)
+                
+                with diag_col1:
+                    st.markdown("**Column Operating Severity & Status**")
+                    if pred_rco_rec_360 <= 5.0:
+                        st.success(
+                            "✅ **Deep Cut Achieved:** Atmospheric residue recovery @ 360°C is within target limits (≤ 5.0 vol%). "
+                            "Distillate slippage into residue is minimized, ensuring high diesel/gas oil capture."
+                        )
+                    elif pred_rco_rec_360 <= 7.5:
+                        st.info(
+                            "ℹ️ **Nominal Fractionation:** Tower stripping is operating within standard parameters (5.0 - 7.5 vol%). "
+                            "Good operational balance between furnace firing duty and cut yield."
+                        )
+                    else:
+                        st.error(
+                            "⚠️ **High Distillate Loss in Residue:** Predicted RCO recovery @ 360°C exceeds 7.5 vol%. "
+                            "Valuable atmospheric gas oil / heavy diesel fractions are slipping into reduced crude oil (RCO)."
+                        )
+
+                with diag_col2:
+                    st.markdown("**Actionable Setpoint Recommendations**")
+                    recommendations = []
+                    
+                    # Steam stripping check
+                    if steam_ratio < 7.5:
+                        recommendations.append(f"• **Increase Stripping Steam:** Current ratio is {steam_ratio:.2f} kg/t (target: ≥ 8.0 kg/t). Raising steam flow lowers hydrocarbon partial pressure and strips entrapped distillates.")
+                    elif steam_ratio > 12.0:
+                        recommendations.append(f"• **Optimize Stripping Steam:** Ratio is high ({steam_ratio:.2f} kg/t). Check column top pressure and condenser duty to prevent hydraulic flooding or sour water surge.")
+                    
+                    # Furnace Coil Outlet Temperature (COT) check
+                    if pred_rco_rec_360 > 6.5 and cot_current < 355.0:
+                        cot_bump = min(358.0 - cot_current, 2.5)
+                        recommendations.append(f"• **Increase Furnace COT:** Current COT is {cot_current:.2f} °C. Consider raising COT by +{cot_bump:.1f} °C (within safe tube metallurgy and coking limits) to increase vaporization.")
+                    
+                    # Flash Zone Pressure check
+                    fzp_current = float(eval_inputs.get('flash_zone_p_kgcm2', 1.45))
+                    if fzp_current > 1.55:
+                        recommendations.append(f"• **High Flash Zone Backpressure:** Pressure is {fzp_current:.2f} kg/cm²g. Check overhead condenser fouling and ejector/off-gas compressor suction to minimize tower pressure.")
+
+                    if not recommendations:
+                        recommendations.append("• **Tower in Sweet Spot:** All operational setpoints are well-balanced within steady-state design margins. Maintain current process inputs.")
+
+                    for rec in recommendations:
+                        st.markdown(rec)
 
                 # Standalone RCO Curve Sweep
                 base_cot = float(eval_inputs.get('cot_degC', stats['mean_cot']))
